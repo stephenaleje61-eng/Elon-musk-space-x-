@@ -22,9 +22,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   if (!product) return null;
 
+  const defaultPlaceholder = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600';
   const images = product.images && product.images.length > 0
-    ? product.images
-    : ['/src/assets/images/hero_elon_musk_space_1793378963159.jpg'];
+    ? product.images.map(img => img.startsWith('/src/assets') ? defaultPlaceholder : img)
+    : [defaultPlaceholder];
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -82,11 +83,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6 sm:p-8">
           {/* Left: Gallery */}
           <div className="flex flex-col gap-4">
-            <div className="aspect-4/3 rounded-xl overflow-hidden bg-zinc-900 border border-zinc-200 flex items-center justify-center">
+            <div className="aspect-4/3 rounded-xl overflow-hidden border border-zinc-200 flex items-center justify-center">
               <img
-                src={images[selectedImageIndex]}
+                src={images[selectedImageIndex] || defaultPlaceholder}
                 alt={product.title}
                 className="w-full h-full object-cover object-center"
+                onError={(e) => {
+                  e.currentTarget.src = defaultPlaceholder;
+                }}
                 referrerPolicy="no-referrer"
               />
             </div>
@@ -101,7 +105,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       selectedImageIndex === i ? 'border-blue-600' : 'border-zinc-200 opacity-60 hover:opacity-100'
                     }`}
                   >
-                    <img src={img} alt="Thumbnail" className="w-full h-full object-cover" />
+                    <img
+                      src={img}
+                      alt="Thumbnail"
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.src = defaultPlaceholder;
+                      }}
+                    />
                   </button>
                 ))}
               </div>

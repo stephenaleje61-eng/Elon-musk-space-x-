@@ -20,9 +20,12 @@ export const WelcomeHero: React.FC<WelcomeHeroProps> = ({
       {/* Background Hero Image with Measured Gradient Scrim */}
       <div className="absolute inset-0 z-0">
         <img
-          src="/src/assets/images/hero_elon_musk_space_1793378963159.jpg"
-          alt="Tesla Cybertruck, Model S, SpaceX Starship rocket, Optimus robot and orbital constellation"
+          src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1600"
+          alt="SpaceX Starship, orbital constellation and deep space technology"
           className="w-full h-full object-cover object-center opacity-40 mix-blend-luminosity scale-105 transform hover:scale-100 transition-transform duration-1000 ease-out"
+          onError={(e) => {
+            e.currentTarget.src = "https://images.unsplash.com/photo-1517976487492-5750f3195933?w=1600";
+          }}
           referrerPolicy="no-referrer"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-zinc-950/40" />

@@ -41,7 +41,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Armor Glass': 'Class 4 Impact Resistant',
       'Steer-by-Wire': 'Variable Ratio Electronic',
     },
-    images: ['/src/assets/images/product_tesla_cybertruck_1793378963912.jpg'],
+    images: ['https://images.unsplash.com/photo-1560958089-b8a1929cea89?w=600'],
     description: 'Built for any planet. Powered by three motors producing 845 horsepower with torque vectoring, steer-by-wire, and shatter-resistant armor glass.',
     isFeatured: true,
     inStock: true,
@@ -64,7 +64,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Peak Power': '1,020 hp',
       'Aerodynamics': '0.208 Cd lowest on Earth',
     },
-    images: ['/src/assets/images/hero_elon_musk_space_1793378963159.jpg'],
+    images: ['https://images.unsplash.com/photo-1560958089-b8a1929cea89?w=600'],
     description: 'The quickest accelerating production sedan on the planet. Tri-motor powertrain with torque vectoring and carbon-sleeved rotors.',
     isFeatured: true,
     inStock: true,
@@ -85,7 +85,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Solar Inverter': '6 Solar MPPTs built-in',
       'Warranty': '10 Years 100% capacity',
     },
-    images: ['/src/assets/images/hero_elon_musk_space_1793378963159.jpg'],
+    images: ['https://images.unsplash.com/photo-1509391365360-2e959784a276?w=600'],
     description: 'Fully integrated solar and storage system. Powers all standard appliances seamlessly during grid failures with uninterrupted automated switchover.',
     isFeatured: false,
     inStock: true,
@@ -110,7 +110,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Tactile Sensing': '10-finger tactile pressure arrays',
       'Compute': 'Dual Tesla FSD Computer modules',
     },
-    images: ['/src/assets/images/product_tesla_optimus_1793378964771.jpg'],
+    images: ['https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=600'],
     description: 'Designed to eliminate unsafe, repetitive, or tedious physical labor. Optimus Gen 2 features custom Tesla actuators, tactile finger pads capable of manipulating eggs, and end-to-end neural network perception.',
     isFeatured: true,
     inStock: true,
@@ -135,7 +135,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Raptor 3 Engines': '33 Booster + 6 Ship engines',
       'Propellant': 'Liquid Methane (CH4) & Liquid Oxygen (LOX)',
     },
-    images: ['/src/assets/images/product_spacex_starship_1793378965493.jpg'],
+    images: ['https://images.unsplash.com/photo-1517976487492-5750f3195933?w=600'],
     description: 'The most powerful rocket system ever flown in human history. Fully reusable two-stage rocket capable of transporting unprecedented cargo mass and human explorers to orbit, the Moon, and Mars.',
     isFeatured: true,
     inStock: true,
@@ -157,7 +157,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Power to Payload': 'Up to 2.0 kW continuous',
       'Re-entry': 'PICA-X thermal heatshield with ocean recovery',
     },
-    images: ['/src/assets/images/product_spacex_starship_1793378965493.jpg'],
+    images: ['https://images.unsplash.com/photo-1541185933-ef5d8ed016c2?w=600'],
     description: 'Standardized research locker onboard autonomous Dragon 2 spacecraft. Includes active cooling, data links, and precision atmospheric return to Earth.',
     isFeatured: false,
     inStock: true,
@@ -180,7 +180,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Weather Resistance': 'IP67 waterproof with snow melt',
       'Power Consumption': '50–75 W typical',
     },
-    images: ['/src/assets/images/product_starlink_kit_1793378965231.jpg'],
+    images: ['https://images.unsplash.com/photo-1495578942200-c5f5d7af99d3?w=600'],
     description: 'Engineered by SpaceX to deliver high-speed, low-latency broadband internet across the most remote oceans, mountain peaks, and rural communities on Earth.',
     isFeatured: true,
     inStock: true,
@@ -204,7 +204,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Training Infrastructure': 'Memphis Colossus 100k H100 Cluster',
       'Real-time Access': 'Live uncensored X ecosystem knowledge grounding',
     },
-    images: ['/src/assets/images/hero_elon_musk_space_1793378963159.jpg'],
+    images: ['https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600'],
     description: 'Enterprise API integration into the frontier intelligence developed by xAI. Built with a profound pursuit of cosmic understanding and truth-seeking reasoning.',
     isFeatured: true,
     inStock: true,
@@ -227,7 +227,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Sampling Rate': '20 kHz per channel neural spike decoder',
       'Wireless': 'Low-energy Bluetooth & custom inductive charger',
     },
-    images: ['/src/assets/images/hero_elon_musk_space_1793378963159.jpg'],
+    images: ['https://images.unsplash.com/photo-1507413245164-6160d8298b31?w=600'],
     description: 'Hardware simulator and developer suite modeled on the Neuralink N1 Telepathy implant. Enables biomedical engineers to build direct digital thought interfaces.',
     isFeatured: false,
     inStock: true,
@@ -249,7 +249,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Drive Power': 'All-electric battery & umbilical system',
       'Surface Launch': 'Porpoising entry/exit without open excavation pits',
     },
-    images: ['/src/assets/images/hero_elon_musk_space_1793378963159.jpg'],
+    images: ['https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600'],
     description: 'Transforms urban transit. Prufrock digs continuously while installing pre-cast concrete tunnel rings, eliminating traffic congestion through 3D subterranean loop transit networks.',
     isFeatured: false,
     inStock: true,
@@ -271,7 +271,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Video Uploads': 'Up to 3 hours in 1080p/4K resolution',
       'Analytics': 'Real-time audience engagement telemetry and monetization',
     },
-    images: ['/src/assets/images/hero_elon_musk_space_1793378963159.jpg'],
+    images: ['https://images.unsplash.com/photo-1611605698335-8b1569810432?w=600'],
     description: 'The global digital town square. Official organization verification on X unlocks premier broadcasting capability, community notes, and direct integration into Grok AI.',
     isFeatured: false,
     inStock: true,
@@ -294,7 +294,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Energy Storage Deployment': '15.3 GWh deployed quarterly',
       'Operating Margin': 'Industry-leading automotive gross margins',
     },
-    images: ['/src/assets/images/hero_elon_musk_space_1793378963159.jpg'],
+    images: ['https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=600'],
     description: 'Exhaustive institutional report containing balance sheet models, automotive cost curves, and autonomous vehicle fleet monetization analyses. Public market educational document.',
     isFeatured: true,
     inStock: true,
@@ -313,7 +313,7 @@ export const INITIAL_ARTICLES: Article[] = [
     category: 'Launch information',
     author: 'SpaceX Propulsion Engineering Team',
     readTime: '6 min read',
-    coverImage: '/src/assets/images/product_spacex_starship_1793378965493.jpg',
+    coverImage: 'https://images.unsplash.com/photo-1517976487492-5750f3195933?w=600',
     content: `Achieving full reusability is the holy grail of rocket engineering, but reusability alone does not get millions of tons of equipment to Mars. To escape Earth's deep gravity well with over 100 tons of useful cargo, a ship must be refueled in Low Earth Orbit.\n\nStarship uses an innovative ship-to-ship docking system where liquid methane and liquid oxygen are settled using slight ullage thruster burns and transferred via hermetically sealed quick-disconnect couplings. This architecture reduces the cost per kilogram to deep space by more than two orders of magnitude compared to legacy expendable rockets.`,
     tags: ['Starship', 'Cryogenics', 'Mars Architecture', 'Orbital Mechanics'],
     isFeatured: true,
@@ -328,7 +328,7 @@ export const INITIAL_ARTICLES: Article[] = [
     category: 'Robot technology updates',
     author: 'Tesla Robotics Systems Division',
     readTime: '5 min read',
-    coverImage: '/src/assets/images/product_tesla_optimus_1793378964771.jpg',
+    coverImage: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=600',
     content: `Humanoid robotics requires an unprecedented torque-to-weight ratio. Traditional industrial robots rely on heavy hydraulic pumps or off-the-shelf planetary gearboxes that produce clumsy motions.\n\nFor Optimus Gen 2, Tesla custom-designed integrated rotary and linear actuators featuring strain-wave gearing and compact dual-encoder feedback. Every finger contains custom tactile sensors capable of registering sub-gram forces, allowing delicate objects like raw eggs and semiconductor wafers to be manipulated with effortless biological fluidity.`,
     tags: ['Optimus', 'Actuators', 'Neural Networks', 'Automation'],
     isFeatured: true,
@@ -343,7 +343,7 @@ export const INITIAL_ARTICLES: Article[] = [
     category: 'Satellite internet',
     author: 'Starlink Constellation Architecture',
     readTime: '4 min read',
-    coverImage: '/src/assets/images/product_starlink_kit_1793378965231.jpg',
+    coverImage: 'https://images.unsplash.com/photo-1495578942200-c5f5d7af99d3?w=600',
     content: `For decades, satellite phones required giant specialized antennas and exorbitant subscription rates. With Starlink Direct-to-Cell, SpaceX has placed active cellular towers into space orbit.\n\nEquipped with enormous 25-square-meter phased array antennas, v2 mini satellites operate Doppler-corrected LTE protocol stacks that connect directly to ordinary, unmodified consumer smartphones anywhere on Earth where the sky is visible.`,
     tags: ['Starlink', 'Cellular', 'Phased Array', 'Global Telecom'],
     isFeatured: true,
@@ -361,12 +361,50 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
       for (const prod of INITIAL_PRODUCTS) {
         await setDoc(doc(db, 'products', prod.id), prod);
       }
+    } else {
+      // Overwrite/sync existing products in Firestore with the working Unsplash image URLs
+      for (const docSnap of productsSnap.docs) {
+        const data = docSnap.data();
+        const firstImg = data.images?.[0] || '';
+        if (!firstImg || firstImg.startsWith('/src/assets/images')) {
+          const matching = INITIAL_PRODUCTS.find((p) => p.id === docSnap.id);
+          if (matching) {
+            await setDoc(
+              doc(db, 'products', docSnap.id),
+              {
+                ...data,
+                images: matching.images,
+                updatedAt: new Date().toISOString(),
+              },
+              { merge: true }
+            );
+          }
+        }
+      }
     }
 
     const articlesSnap = await getDocs(collection(db, 'articles'));
     if (articlesSnap.empty) {
       for (const art of INITIAL_ARTICLES) {
         await setDoc(doc(db, 'articles', art.id), art);
+      }
+    } else {
+      for (const docSnap of articlesSnap.docs) {
+        const data = docSnap.data();
+        if (!data.coverImage || data.coverImage.startsWith('/src/assets/images')) {
+          const matching = INITIAL_ARTICLES.find((a) => a.id === docSnap.id);
+          if (matching) {
+            await setDoc(
+              doc(db, 'articles', docSnap.id),
+              {
+                ...data,
+                coverImage: matching.coverImage,
+                updatedAt: new Date().toISOString(),
+              },
+              { merge: true }
+            );
+          }
+        }
       }
     }
   } catch (error) {

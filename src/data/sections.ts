@@ -8,7 +8,7 @@ export const SECTIONS: SectionMeta[] = [
     shortName: 'Tesla & Energy',
     tagline: 'Electric Propulsion, Megapack Storage & Terawatt Solar Architecture',
     description: 'Pioneering electric vehicles, grid-scale battery storage, autonomous driving silicon, and residential solar generation designed to accelerate the world’s transition to sustainable energy.',
-    heroImage: '/src/assets/images/hero_elon_musk_space_1793378963159.jpg',
+    heroImage: 'https://images.unsplash.com/photo-1560958089-b8a1929cea89?w=1200',
     categories: [
       'Model S',
       'Model 3',
@@ -29,7 +29,7 @@ export const SECTIONS: SectionMeta[] = [
     shortName: 'Robotics',
     tagline: 'Optimus Gen 2 & General-Purpose Humanoid Automation',
     description: 'Biomimetic bipedal robotics engineered with integrated Tesla actuators, 10-finger tactile pressure sensors, and end-to-end neural network visual processing.',
-    heroImage: '/src/assets/images/product_tesla_optimus_1793378964771.jpg',
+    heroImage: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=1200',
     categories: [
       'Optimus',
       'Humanoid robots',
@@ -45,7 +45,7 @@ export const SECTIONS: SectionMeta[] = [
     shortName: 'SpaceX',
     tagline: 'Multiplanetary Transportation Architecture & Orbital Reusability',
     description: 'SpaceX Starship, Falcon 9, Falcon Heavy, and Dragon spacecraft engineered to make life multiplanetary through orbital propellant transfer and full reusability.',
-    heroImage: '/src/assets/images/product_spacex_starship_1793378965493.jpg',
+    heroImage: 'https://images.unsplash.com/photo-1517976487492-5750f3195933?w=1200',
     categories: [
       'SpaceX',
       'Falcon 9',
@@ -63,7 +63,7 @@ export const SECTIONS: SectionMeta[] = [
     shortName: 'Starlink',
     tagline: 'Global Low-Earth Orbit Constellation & Direct-to-Cell Telemetry',
     description: 'World’s largest constellation of highly advanced satellites in low Earth orbit delivering low-latency broadband internet across oceans, flights, and remote wilderness.',
-    heroImage: '/src/assets/images/product_starlink_kit_1793378965231.jpg',
+    heroImage: 'https://images.unsplash.com/photo-1495578942200-c5f5d7af99d3?w=1200',
     categories: [
       'Satellite internet',
       'Residential internet',
@@ -79,7 +79,7 @@ export const SECTIONS: SectionMeta[] = [
     shortName: 'xAI & Grok',
     tagline: 'Frontier Cosmic Reasoning & The Memphis Colossus Supercomputer',
     description: 'xAI is building artificial intelligence with a maximum pursuit of truth to accelerate human scientific discovery, powered by Grok multimodal models and 100k H100 GPU clusters.',
-    heroImage: '/src/assets/images/hero_elon_musk_space_1793378963159.jpg',
+    heroImage: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200',
     categories: [
       'xAI',
       'Grok',
@@ -95,7 +95,7 @@ export const SECTIONS: SectionMeta[] = [
     shortName: 'Neuralink',
     tagline: 'High-Bandwidth Micron-Scale Cortical Neural Interfaces',
     description: 'Creating ultra-high bandwidth brain-computer interfaces to restore autonomy to those with unmet medical needs today and unlock human potential tomorrow.',
-    heroImage: '/src/assets/images/hero_elon_musk_space_1793378963159.jpg',
+    heroImage: 'https://images.unsplash.com/photo-1507413245164-6160d8298b31?w=1200',
     categories: [
       'Brain-computer interfaces',
       'Research',
@@ -110,7 +110,7 @@ export const SECTIONS: SectionMeta[] = [
     shortName: 'Boring Company',
     tagline: 'High-Speed Subterranean Transit & Automated Prufrock Diggers',
     description: 'Solving soul-crushing traffic through 3D subterranean loop transportation networks built by all-electric automated tunneling machines.',
-    heroImage: '/src/assets/images/hero_elon_musk_space_1793378963159.jpg',
+    heroImage: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1200',
     categories: [
       'Tunnels',
       'Vegas Loop',
@@ -125,7 +125,7 @@ export const SECTIONS: SectionMeta[] = [
     shortName: 'X Platform',
     tagline: 'The Global Digital Town Square & Everything App Ecosystem',
     description: 'Decentralized public discourse, long-form video broadcasting, real-time creator monetization, community notes verification, and integrated native financial rails.',
-    heroImage: '/src/assets/images/hero_elon_musk_space_1793378963159.jpg',
+    heroImage: 'https://images.unsplash.com/photo-1611605698335-8b1569810432?w=1200',
     categories: [
       'X platform',
       'Social media technology',
@@ -141,7 +141,7 @@ export const SECTIONS: SectionMeta[] = [
     shortName: 'Investment Hub',
     tagline: 'Verified Public Financial Intelligence, Equity Research & Market Analytics',
     description: 'Institutional-grade public market data, Tesla (NASDAQ: TSLA) financial disclosures, historical quarterly production metrics, audited balance sheet ratios, and educational research.',
-    heroImage: '/src/assets/images/hero_elon_musk_space_1793378963159.jpg',
+    heroImage: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200',
     categories: [
       'Tesla stock information',
       'Company financial reports',

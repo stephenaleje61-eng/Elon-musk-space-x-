@@ -393,11 +393,14 @@ export default function App() {
                     className="group bg-white rounded-xl border border-zinc-200 overflow-hidden flex flex-col justify-between hover:border-zinc-300 hover:shadow-md transition-all cursor-pointer"
                   >
                     <div>
-                      <div className="aspect-16/9 bg-zinc-900 overflow-hidden">
+                      <div className="aspect-16/9 overflow-hidden">
                         <img
                           src={art.coverImage}
                           alt={art.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={(e) => {
+                            e.currentTarget.src = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600';
+                          }}
                           referrerPolicy="no-referrer"
                         />
                       </div>

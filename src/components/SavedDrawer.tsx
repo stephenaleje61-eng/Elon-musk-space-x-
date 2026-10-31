@@ -50,9 +50,12 @@ export const SavedDrawer: React.FC<SavedDrawerProps> = ({
                 >
                   {item.image && (
                     <img
-                      src={item.image}
+                      src={item.image.startsWith('/src/assets') ? 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600' : item.image}
                       alt={item.title}
-                      className="w-16 h-16 rounded-lg object-cover bg-zinc-900 shrink-0"
+                      className="w-16 h-16 rounded-lg object-cover shrink-0"
+                      onError={(e) => {
+                        e.currentTarget.src = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600';
+                      }}
                     />
                   )}
                   <div className="flex-1 min-w-0">
