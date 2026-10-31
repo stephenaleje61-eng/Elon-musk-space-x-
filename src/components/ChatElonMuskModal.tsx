@@ -10,6 +10,12 @@ import {
   SlidersHorizontal,
   ChevronLeft,
   CheckCheck,
+  Image as ImageIcon,
+  Paperclip,
+  Maximize2,
+  ZoomIn,
+  Loader2,
+  Trash2,
 } from 'lucide-react';
 import {
   getLocalChatBackup,
@@ -20,10 +26,11 @@ import {
   subscribeToAllAdminConversations,
   exportAllChatsJson,
 } from '../firebase/chatService';
-import { ensureAnonymousAuth, ADMIN_BOOTSTRAP_EMAIL } from '../firebase/auth';
+import { ensureAnonymousAuth } from '../firebase/auth';
 import { Conversation, Message } from '../types';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { compressImageFile } from '../firebase/storage';
 
 interface ChatElonMuskModalProps {
   isOpen: boolean;
@@ -40,6 +47,7 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   const [viewMode, setViewMode] = useState<'visitor' | 'host'>('visitor');
   const [hostUnlocked, setHostUnlocked] = useState(isAdmin);
   const [hostPasscode, setHostPasscode] = useState('');
+  const [hostLoginError, setHostLoginError] = useState<string | null>(null);
   const [showHostLogin, setShowHostLogin] = useState(false);
 
   // Visitor Chat State
@@ -52,6 +60,12 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
+  // Visitor Image Attachment State
+  const [visitorImage, setVisitorImage] = useState<string | null>(null);
+  const [visitorImageName, setVisitorImageName] = useState<string | null>(null);
+  const [isCompressingVisitorImage, setIsCompressingVisitorImage] = useState(false);
+  const visitorFileInputRef = useRef<HTMLInputElement>(null);
+
   // Host (You) State
   const [allConversations, setAllConversations] = useState<Conversation[]>([]);
   const [selectedVisitorConv, setSelectedVisitorConv] = useState<Conversation | null>(null);
@@ -59,6 +73,20 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   const [hostReplyText, setHostReplyText] = useState('');
   const [isHostSending, setIsHostSending] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+
+  // Host Image Attachment State
+  const [hostImage, setHostImage] = useState<string | null>(null);
+  const [hostImageName, setHostImageName] = useState<string | null>(null);
+  const [isCompressingHostImage, setIsCompressingHostImage] = useState(false);
+  const hostFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Full-resolution Lightbox viewer modal
+  const [lightboxImage, setLightboxImage] = useState<{
+    url: string;
+    sender: string;
+    time: string;
+    caption?: string;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hostMessagesEndRef = useRef<HTMLDivElement>(null);
@@ -159,19 +187,112 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   // Auto-scroll on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, visitorImage]);
 
   useEffect(() => {
     hostMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [hostMessages]);
+  }, [hostMessages, hostImage]);
 
-  // Visitor: Send Real Message
+  // Image File Selection Handler
+  const handleImageFileSelect = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    mode: 'visitor' | 'host'
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      if (mode === 'visitor') {
+        setSendError('Please select a valid image file (PNG, JPG, WebP, GIF).');
+      }
+      return;
+    }
+
+    if (mode === 'visitor') {
+      setIsCompressingVisitorImage(true);
+      setSendError(null);
+    } else {
+      setIsCompressingHostImage(true);
+    }
+
+    try {
+      const compressed = await compressImageFile(file, 1200, 0.82);
+      if (mode === 'visitor') {
+        setVisitorImage(compressed);
+        setVisitorImageName(file.name);
+      } else {
+        setHostImage(compressed);
+        setHostImageName(file.name);
+      }
+    } catch (err) {
+      console.error('Image compression error:', err);
+      if (mode === 'visitor') {
+        setSendError('Failed to prepare image for sending. Please try another image.');
+      }
+    } finally {
+      if (mode === 'visitor') {
+        setIsCompressingVisitorImage(false);
+      } else {
+        setIsCompressingHostImage(false);
+      }
+      e.target.value = '';
+    }
+  };
+
+  // Clipboard Paste Image Handler
+  const handlePasteImage = async (
+    e: React.ClipboardEvent,
+    mode: 'visitor' | 'host'
+  ) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          if (mode === 'visitor') {
+            setIsCompressingVisitorImage(true);
+            setSendError(null);
+          } else {
+            setIsCompressingHostImage(true);
+          }
+          try {
+            const compressed = await compressImageFile(file, 1200, 0.82);
+            if (mode === 'visitor') {
+              setVisitorImage(compressed);
+              setVisitorImageName('Pasted snapshot');
+            } else {
+              setHostImage(compressed);
+              setHostImageName('Pasted snapshot');
+            }
+          } catch (err) {
+            console.error('Image paste compression error:', err);
+          } finally {
+            if (mode === 'visitor') {
+              setIsCompressingVisitorImage(false);
+            } else {
+              setIsCompressingHostImage(false);
+            }
+          }
+          break;
+        }
+      }
+    }
+  };
+
+  // Visitor: Send Real Message (Text, Image, or both)
   const handleVisitorSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputMessage.trim() || !visitorId || isSending) return;
+    if ((!inputMessage.trim() && !visitorImage) || !visitorId || isSending) return;
 
     const text = inputMessage.trim();
+    const imageToSend = visitorImage;
+
     setInputMessage('');
+    setVisitorImage(null);
+    setVisitorImageName(null);
     setIsSending(true);
     setSendError(null);
 
@@ -183,7 +304,8 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
         'visitor',
         visitorId,
         visitorName,
-        text
+        text,
+        imageToSend || undefined
       );
       // Update local storage backup
       updateLocalChatBackup({
@@ -195,18 +317,25 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
       console.error('Failed to send message:', err);
       setSendError('Message failed to deliver. Please check connection and retry.');
       setInputMessage(text);
+      if (imageToSend) {
+        setVisitorImage(imageToSend);
+      }
     } finally {
       setIsSending(false);
     }
   };
 
-  // Host: Send Real Reply directly to Visitor
+  // Host: Send Real Reply directly to Visitor (Text, Image, or both)
   const handleHostSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!hostReplyText.trim() || !selectedVisitorConv || isHostSending) return;
+    if ((!hostReplyText.trim() && !hostImage) || !selectedVisitorConv || isHostSending) return;
 
     const text = hostReplyText.trim();
+    const imageToSend = hostImage;
+
     setHostReplyText('');
+    setHostImage(null);
+    setHostImageName(null);
     setIsHostSending(true);
 
     try {
@@ -215,11 +344,15 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
         'admin',
         visitorId || 'admin',
         'Elon Musk',
-        text
+        text,
+        imageToSend || undefined
       );
     } catch (err) {
       console.error('Host reply failed:', err);
       setHostReplyText(text);
+      if (imageToSend) {
+        setHostImage(imageToSend);
+      }
     } finally {
       setIsHostSending(false);
     }
@@ -247,13 +380,14 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   // Host Login with Passcode
   const handleHostLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    setHostLoginError(null);
     if (hostPasscode.trim() === 'elon2026' || hostPasscode.trim() === 'admin') {
       setHostUnlocked(true);
       setShowHostLogin(false);
       setViewMode('host');
       setHostPasscode('');
     } else {
-      alert('Invalid host security key.');
+      setHostLoginError('Invalid host security key. Access denied.');
     }
   };
 
@@ -274,9 +408,9 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md">
       {/* Strict Monochrome Black & White Window */}
-      <div className="relative w-full max-w-2xl h-[92vh] sm:h-[680px] bg-black text-white border border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden font-sans">
+      <div className="relative w-full max-w-2xl h-[92vh] sm:h-[700px] bg-black text-white border border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden font-sans">
         
         {/* Header Bar */}
         <div className="px-5 py-3.5 bg-black border-b border-zinc-800 flex items-center justify-between shrink-0">
@@ -295,7 +429,7 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
               </div>
               <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 font-mono">
                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                <span>Live Encrypted Direct Chat</span>
+                <span>Live Encrypted Direct Chat & Media</span>
               </div>
             </div>
           </div>
@@ -327,7 +461,10 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
               </div>
             ) : (
               <button
-                onClick={() => setShowHostLogin(true)}
+                onClick={() => {
+                  setHostLoginError(null);
+                  setShowHostLogin(true);
+                }}
                 className="p-1.5 text-zinc-500 hover:text-white rounded-lg transition-colors cursor-pointer"
                 title="Host Login"
               >
@@ -393,7 +530,7 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                     EM
                   </div>
                   <strong className="text-white block mb-1 text-sm">Direct Line to Elon Musk</strong>
-                  Type your message below. All messages are genuinely delivered in real time to the host console.
+                  Type your message or share an image below. All messages and photos are delivered in real time.
                 </div>
               ) : (
                 messages.map((m) => {
@@ -413,13 +550,39 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                       </div>
 
                       <div
-                        className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-xs sm:text-sm leading-relaxed ${
+                        className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 text-xs sm:text-sm leading-relaxed ${
                           isMe
                             ? 'bg-zinc-900 text-white border border-zinc-800 rounded-tr-none'
                             : 'bg-white text-black font-medium rounded-tl-none'
                         }`}
                       >
-                        <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                        {/* Sent Image Attachment */}
+                        {m.imageUrl && (
+                          <div
+                            onClick={() =>
+                              setLightboxImage({
+                                url: m.imageUrl!,
+                                sender: isMe ? visitorName : 'Elon Musk',
+                                time: formattedTime,
+                                caption: m.text,
+                              })
+                            }
+                            className="relative group cursor-pointer mb-2 rounded-xl overflow-hidden bg-black/60 border border-zinc-800/80 shadow-md transition-transform active:scale-[0.99]"
+                          >
+                            <img
+                              src={m.imageUrl}
+                              alt="Shared attachment"
+                              className="w-full max-h-64 sm:max-h-72 object-cover transition-opacity group-hover:opacity-95"
+                              loading="lazy"
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white font-mono text-xs">
+                              <Maximize2 className="w-4 h-4" />
+                              <span>View Full Size</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {m.text && <p className="whitespace-pre-wrap break-words px-1">{m.text}</p>}
                       </div>
                     </div>
                   );
@@ -439,24 +602,95 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
               </div>
             )}
 
-            {/* Input Bar */}
+            {/* Attached Image Preview Strip */}
+            {visitorImage && (
+              <div className="px-4 py-2.5 bg-zinc-950 border-t border-zinc-800 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="relative group">
+                    <img
+                      src={visitorImage}
+                      alt="Attachment preview"
+                      className="w-12 h-12 object-cover rounded-lg border border-zinc-700 shadow-sm"
+                    />
+                  </div>
+                  <div className="text-xs">
+                    <div className="text-white font-medium truncate max-w-[200px] sm:max-w-[320px]">
+                      {visitorImageName || 'Image attached'}
+                    </div>
+                    <div className="text-[10px] text-zinc-400 font-mono">
+                      Image ready to send with message
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVisitorImage(null);
+                    setVisitorImageName(null);
+                  }}
+                  className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-lg cursor-pointer transition-colors"
+                  title="Remove attached image"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Input Bar with Image Send Button */}
             <form
               onSubmit={handleVisitorSend}
               className="p-3 bg-black border-t border-zinc-800 flex items-center gap-2 shrink-0"
             >
+              {/* Hidden file input */}
+              <input
+                type="file"
+                ref={visitorFileInputRef}
+                onChange={(e) => handleImageFileSelect(e, 'visitor')}
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+              />
+
+              {/* Attach Image Button */}
+              <button
+                type="button"
+                onClick={() => visitorFileInputRef.current?.click()}
+                disabled={isCompressingVisitorImage || isSending}
+                className={`p-3 rounded-xl border border-zinc-800 transition-colors cursor-pointer shrink-0 ${
+                  visitorImage
+                    ? 'bg-white text-black font-bold'
+                    : 'bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800'
+                }`}
+                title="Send image or photo (PNG, JPG, WebP)"
+              >
+                {isCompressingVisitorImage ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                ) : (
+                  <ImageIcon className="w-4 h-4" />
+                )}
+              </button>
+
               <input
                 type="text"
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
-                placeholder="Type your message to Elon Musk..."
+                onPaste={(e) => handlePasteImage(e, 'visitor')}
+                placeholder={visitorImage ? "Add an optional caption..." : "Type your message or paste an image..."}
                 className="flex-1 px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-white text-xs sm:text-sm focus:outline-none focus:border-white transition-colors placeholder:text-zinc-500"
               />
+
               <button
                 type="submit"
-                disabled={!inputMessage.trim() || isSending}
-                className="px-6 py-3 bg-white hover:bg-zinc-200 active:bg-zinc-300 text-black font-extrabold text-xs sm:text-sm rounded-xl transition-all cursor-pointer shadow-sm disabled:opacity-50 shrink-0"
+                disabled={(!inputMessage.trim() && !visitorImage) || isSending || isCompressingVisitorImage}
+                className="px-6 py-3 bg-white hover:bg-zinc-200 active:bg-zinc-300 text-black font-extrabold text-xs sm:text-sm rounded-xl transition-all cursor-pointer shadow-sm disabled:opacity-40 shrink-0 flex items-center gap-2"
               >
-                SEND
+                {isSending ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>SENDING</span>
+                  </>
+                ) : (
+                  <span>SEND</span>
+                )}
               </button>
             </form>
           </div>
@@ -557,13 +791,39 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                           </div>
 
                           <div
-                            className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-xs sm:text-sm leading-relaxed ${
+                            className={`max-w-[80%] rounded-2xl p-3 text-xs sm:text-sm leading-relaxed ${
                               isHost
                                 ? 'bg-white text-black font-medium rounded-tr-none'
                                 : 'bg-zinc-900 text-white border border-zinc-800 rounded-tl-none'
                             }`}
                           >
-                            <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                            {/* Render Image in Host View */}
+                            {m.imageUrl && (
+                              <div
+                                onClick={() =>
+                                  setLightboxImage({
+                                    url: m.imageUrl!,
+                                    sender: isHost ? 'You (Elon Musk)' : selectedVisitorConv.visitorName,
+                                    time: formattedTime,
+                                    caption: m.text,
+                                  })
+                                }
+                                className="relative group cursor-pointer mb-2 rounded-xl overflow-hidden bg-black/60 border border-zinc-800/80 shadow-md transition-transform active:scale-[0.99]"
+                              >
+                                <img
+                                  src={m.imageUrl}
+                                  alt="Shared attachment"
+                                  className="w-full max-h-60 object-cover transition-opacity group-hover:opacity-95"
+                                  loading="lazy"
+                                />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white font-mono text-xs">
+                                  <Maximize2 className="w-4 h-4" />
+                                  <span>View Full Size</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {m.text && <p className="whitespace-pre-wrap break-words px-1">{m.text}</p>}
                           </div>
                         </div>
                       );
@@ -572,22 +832,80 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                     <div ref={hostMessagesEndRef} />
                   </div>
 
+                  {/* Attached Image Preview for Host */}
+                  {hostImage && (
+                    <div className="px-4 py-2 bg-zinc-950 border-t border-zinc-800 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={hostImage}
+                          alt="Attachment preview"
+                          className="w-10 h-10 object-cover rounded-lg border border-zinc-700"
+                        />
+                        <div className="text-xs">
+                          <div className="text-white font-medium truncate max-w-[220px]">
+                            {hostImageName || 'Image attached'}
+                          </div>
+                          <div className="text-[10px] text-zinc-400 font-mono">
+                            Ready to transmit
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHostImage(null);
+                          setHostImageName(null);
+                        }}
+                        className="p-1 text-zinc-400 hover:text-white"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
                   {/* Reply Input Bar */}
                   <form
                     onSubmit={handleHostSendReply}
                     className="p-3 bg-black border-t border-zinc-800 flex items-center gap-2 shrink-0"
                   >
                     <input
+                      type="file"
+                      ref={hostFileInputRef}
+                      onChange={(e) => handleImageFileSelect(e, 'host')}
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="hidden"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => hostFileInputRef.current?.click()}
+                      disabled={isCompressingHostImage || isHostSending}
+                      className={`p-2.5 rounded-xl border border-zinc-800 transition-colors cursor-pointer shrink-0 ${
+                        hostImage
+                          ? 'bg-white text-black font-bold'
+                          : 'bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800'
+                      }`}
+                      title="Attach image"
+                    >
+                      {isCompressingHostImage ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      ) : (
+                        <ImageIcon className="w-4 h-4" />
+                      )}
+                    </button>
+
+                    <input
                       type="text"
                       value={hostReplyText}
                       onChange={(e) => setHostReplyText(e.target.value)}
+                      onPaste={(e) => handlePasteImage(e, 'host')}
                       placeholder={`Reply directly to ${selectedVisitorConv.visitorName}...`}
                       className="flex-1 px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-white text-xs sm:text-sm focus:outline-none focus:border-white transition-colors"
                     />
                     <button
                       type="submit"
-                      disabled={!hostReplyText.trim() || isHostSending}
-                      className="px-5 py-2.5 bg-white hover:bg-zinc-200 active:bg-zinc-300 text-black font-extrabold text-xs sm:text-sm rounded-xl transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                      disabled={(!hostReplyText.trim() && !hostImage) || isHostSending || isCompressingHostImage}
+                      className="px-5 py-2.5 bg-white hover:bg-zinc-200 active:bg-zinc-300 text-black font-extrabold text-xs sm:text-sm rounded-xl transition-all cursor-pointer disabled:opacity-40 shrink-0"
                     >
                       SEND
                     </button>
@@ -620,12 +938,21 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                 Enter host security key to manage and reply to all visitor messages.
               </p>
 
+              {hostLoginError && (
+                <div className="mb-3 p-2.5 bg-red-950/70 border border-red-800 rounded-lg text-red-200 text-xs">
+                  {hostLoginError}
+                </div>
+              )}
+
               <form onSubmit={handleHostLogin} className="space-y-3">
                 <input
                   type="password"
                   placeholder="Security key..."
                   value={hostPasscode}
-                  onChange={(e) => setHostPasscode(e.target.value)}
+                  onChange={(e) => {
+                    setHostPasscode(e.target.value);
+                    if (hostLoginError) setHostLoginError(null);
+                  }}
                   className="w-full px-3.5 py-2 text-xs bg-zinc-900 border border-zinc-700 rounded-xl text-white focus:outline-none focus:border-white font-mono"
                   autoFocus
                 />
@@ -637,6 +964,53 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                 </button>
               </form>
             </div>
+          </div>
+        )}
+
+        {/* High-Resolution Image Lightbox Modal */}
+        {lightboxImage && (
+          <div
+            onClick={() => setLightboxImage(null)}
+            className="fixed inset-0 z-60 bg-black/95 backdrop-blur-xl flex flex-col items-center justify-between p-4 sm:p-6"
+          >
+            <div className="w-full max-w-4xl flex items-center justify-between text-white pb-3 border-b border-zinc-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-sm">{lightboxImage.sender}</span>
+                <span className="text-xs text-zinc-400 font-mono">· {lightboxImage.time}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <a
+                  href={lightboxImage.url}
+                  download={`image_${Date.now()}.jpg`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white rounded-lg text-xs font-mono flex items-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Save Image</span>
+                </a>
+                <button
+                  onClick={() => setLightboxImage(null)}
+                  className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-900 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 flex items-center justify-center p-2 max-w-4xl max-h-[76vh] overflow-hidden my-auto">
+              <img
+                src={lightboxImage.url}
+                alt="Enlarged view"
+                className="max-h-full max-w-full object-contain rounded-xl shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+
+            {lightboxImage.caption && (
+              <div className="w-full max-w-4xl text-center text-xs text-zinc-300 font-mono py-2 bg-zinc-950/80 rounded-lg border border-zinc-800 px-4 shrink-0">
+                {lightboxImage.caption}
+              </div>
+            )}
           </div>
         )}
 

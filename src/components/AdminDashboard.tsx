@@ -18,16 +18,19 @@ import {
   Eye,
   LogOut,
   RefreshCw,
+  Users,
+  UserCheck,
+  Search,
 } from 'lucide-react';
 import { SECTIONS } from '../data/sections';
-import { Product, Article, Conversation, Message, ReportItem, AdminAuditLog, SectionId } from '../types';
+import { Product, Article, Conversation, Message, ReportItem, AdminAuditLog, SectionId, UserProfile } from '../types';
 import {
   saveProduct,
   deleteProduct,
   saveArticle,
   deleteArticle,
 } from '../firebase/database';
-import { uploadImage } from '../firebase/storage';
+import { uploadImage, compressImageFile } from '../firebase/storage';
 import {
   subscribeToAllConversations,
   subscribeToMessages,
@@ -41,6 +44,9 @@ import {
   subscribeToReports,
   resolveReport,
   getMarketplaceMetrics,
+  subscribeToUsers,
+  updateUserRole,
+  deleteUserDoc,
 } from '../firebase/adminService';
 
 interface AdminDashboardProps {
@@ -61,7 +67,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onBackToStore,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'products' | 'new-product' | 'articles' | 'new-article' | 'inbox' | 'reports' | 'audit'
+    'products' | 'new-product' | 'articles' | 'new-article' | 'inbox' | 'users' | 'reports' | 'audit'
   >('products');
 
   // Product Creator Form State
@@ -103,11 +109,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [adminReplyText, setAdminReplyText] = useState('');
+  const [adminReplyImage, setAdminReplyImage] = useState<string | null>(null);
+  const [adminReplyImageName, setAdminReplyImageName] = useState<string | null>(null);
+  const [isAdminCompressingImage, setIsAdminCompressingImage] = useState(false);
   const [replySending, setReplySending] = useState(false);
+  const adminChatFileInputRef = useRef<HTMLInputElement>(null);
+  const [adminPreviewLightbox, setAdminPreviewLightbox] = useState<string | null>(null);
 
   // Reports & Audits
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
+  const [usersList, setUsersList] = useState<UserProfile[]>([]);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [userActionLoading, setUserActionLoading] = useState<string | null>(null);
   const [metrics, setMetrics] = useState({ totalProducts: 0, totalConversations: 0, totalUsers: 0 });
 
   // Load metrics & live subscriptions
@@ -122,11 +136,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const unsubAudit = subscribeToAuditLogs((logs) => {
       setAuditLogs(logs);
     });
+    const unsubUsers = subscribeToUsers((u) => {
+      setUsersList(u);
+    });
 
     return () => {
       unsubConversations();
       unsubReports();
       unsubAudit();
+      unsubUsers();
     };
   }, []);
 
@@ -183,7 +201,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const finalImages =
       uploadedImageUrls.length > 0
         ? uploadedImageUrls
-        : ['/src/assets/images/hero_elon_musk_space_1793378963159.jpg'];
+        : ['https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600'];
 
     const specsObj: Record<string, string> = {};
     pSpecs.forEach((s) => {
@@ -261,7 +279,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       category: aCategory.trim(),
       author: aAuthor.trim() || 'Platform Administration',
       readTime: aReadTime.trim() || '4 min read',
-      coverImage: aCoverUrl || '/src/assets/images/hero_elon_musk_space_1793378963159.jpg',
+      coverImage: aCoverUrl || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600',
       content: aContent.trim(),
       tags: aTags.split(',').map((t) => t.trim()).filter(Boolean),
       isFeatured: true,
@@ -294,23 +312,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // Select image for admin chat reply
+  const handleAdminImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    setIsAdminCompressingImage(true);
+    try {
+      const compressed = await compressImageFile(file, 1200, 0.82);
+      setAdminReplyImage(compressed);
+      setAdminReplyImageName(file.name);
+    } catch (err) {
+      console.error('Admin image selection error:', err);
+    } finally {
+      setIsAdminCompressingImage(false);
+      e.target.value = '';
+    }
+  };
+
   // Send admin reply in chat
   const handleSendAdminReply = async () => {
-    if (!adminReplyText.trim() || !activeConversation || replySending) return;
+    if ((!adminReplyText.trim() && !adminReplyImage) || !activeConversation || replySending) return;
     setReplySending(true);
+    const text = adminReplyText.trim();
+    const imageToSend = adminReplyImage;
+    setAdminReplyText('');
+    setAdminReplyImage(null);
+    setAdminReplyImageName(null);
     try {
       await sendMessage(
         activeConversation.id,
         adminId,
         'admin',
         'Platform Administrator',
-        adminReplyText.trim()
+        text,
+        imageToSend || undefined
       );
-      setAdminReplyText('');
     } catch (err) {
       console.error('Reply failed:', err);
+      setAdminReplyText(text);
+      if (imageToSend) setAdminReplyImage(imageToSend);
     } finally {
       setReplySending(false);
+    }
+  };
+
+  // Handle role toggle (promote to admin or demote to user)
+  const handleToggleUserRole = async (targetUser: UserProfile) => {
+    const newRole = targetUser.role === 'admin' ? 'user' : 'admin';
+    const actionDesc = newRole === 'admin' ? 'Promote to Administrator' : 'Demote to Standard User';
+    if (!window.confirm(`Are you sure you want to ${actionDesc.toLowerCase()} for "${targetUser.displayName || targetUser.email || targetUser.id}"?`)) return;
+
+    setUserActionLoading(targetUser.id);
+    try {
+      await updateUserRole(targetUser.id, newRole);
+      await logAdminAction(adminId, adminEmail, 'UPDATE_USER_ROLE', 'User', targetUser.id, {
+        previousRole: targetUser.role,
+        newRole,
+        targetEmail: targetUser.email,
+      });
+    } catch (err) {
+      console.error('Failed to update user role:', err);
+      alert('Failed to update user role in Firestore.');
+    } finally {
+      setUserActionLoading(null);
+    }
+  };
+
+  // Handle delete user profile
+  const handleDeleteUser = async (targetUser: UserProfile) => {
+    if (!window.confirm(`Permanently remove user record "${targetUser.displayName || targetUser.id}" from Firestore?`)) return;
+    setUserActionLoading(targetUser.id);
+    try {
+      await deleteUserDoc(targetUser.id);
+      await logAdminAction(adminId, adminEmail, 'DELETE_USER', 'User', targetUser.id, {
+        email: targetUser.email,
+      });
+    } catch (err) {
+      console.error('Failed to delete user:', err);
+      alert('Failed to delete user from Firestore.');
+    } finally {
+      setUserActionLoading(null);
     }
   };
 
@@ -422,6 +503,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {conversations.some((c) => c.unreadAdminCount > 0) && (
               <span className="w-2 h-2 rounded-full bg-blue-600" />
             )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              activeTab === 'users' ? 'bg-zinc-950 text-white' : 'text-zinc-700 hover:bg-zinc-100'
+            }`}
+          >
+            <span className="flex items-center gap-2.5">
+              <Users className="w-4 h-4 text-purple-500" />
+              <span>User Accounts & Roles</span>
+            </span>
+            <span className="font-mono text-[11px] tabular-nums opacity-70">{usersList.length}</span>
           </button>
 
           <button
@@ -663,7 +757,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="mt-4 flex flex-wrap gap-2 justify-center">
                         {uploadedImageUrls.map((url, i) => (
                           <div key={i} className="w-20 h-20 rounded-lg overflow-hidden border border-zinc-200 relative group">
-                            <img src={url} alt="Uploaded" className="w-full h-full object-cover" />
+                            <img
+                              src={url}
+                              alt="Uploaded"
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.currentTarget.src = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600';
+                              }}
+                            />
                             <button
                               type="button"
                               onClick={() =>
@@ -1004,14 +1105,76 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   : 'bg-white border border-zinc-200 text-zinc-900'
                               }`}
                             >
-                              <p className="whitespace-pre-wrap">{m.text}</p>
+                              {m.imageUrl && (
+                                <div
+                                  onClick={() => setAdminPreviewLightbox(m.imageUrl || null)}
+                                  className="mb-2 overflow-hidden rounded-lg border border-zinc-700/40 cursor-pointer group relative max-w-xs"
+                                >
+                                  <img
+                                    src={m.imageUrl}
+                                    alt="Attachment"
+                                    className="max-h-60 rounded object-cover w-full group-hover:opacity-95"
+                                  />
+                                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-mono">
+                                    Click to enlarge
+                                  </div>
+                                </div>
+                              )}
+                              {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
                             </div>
                           </div>
                         );
                       })}
                     </div>
 
+                    {/* Image Attachment Preview for Admin */}
+                    {adminReplyImage && (
+                      <div className="px-4 py-2 bg-zinc-50 border-t border-zinc-200 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={adminReplyImage}
+                            alt="Preview"
+                            className="w-10 h-10 object-cover rounded border border-zinc-300"
+                          />
+                          <span className="text-xs text-zinc-700 truncate max-w-xs">
+                            {adminReplyImageName || 'Image attached'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdminReplyImage(null);
+                            setAdminReplyImageName(null);
+                          }}
+                          className="p-1 text-zinc-400 hover:text-zinc-700"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+
                     <div className="p-3 bg-white border-t border-zinc-200 flex items-center gap-2">
+                      <input
+                        type="file"
+                        ref={adminChatFileInputRef}
+                        onChange={handleAdminImageSelect}
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => adminChatFileInputRef.current?.click()}
+                        disabled={isAdminCompressingImage || replySending}
+                        className={`p-2 border rounded-lg transition-colors cursor-pointer ${
+                          adminReplyImage
+                            ? 'bg-blue-50 border-blue-400 text-blue-600'
+                            : 'border-zinc-300 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50'
+                        }`}
+                        title="Attach image"
+                      >
+                        <ImageIcon className="w-4 h-4" />
+                      </button>
+
                       <input
                         type="text"
                         value={adminReplyText}
@@ -1027,16 +1190,230 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                       <button
                         onClick={handleSendAdminReply}
-                        disabled={!adminReplyText.trim() || replySending}
+                        disabled={(!adminReplyText.trim() && !adminReplyImage) || replySending || isAdminCompressingImage}
                         className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50 cursor-pointer"
                       >
                         <Send className="w-4 h-4" />
                       </button>
                     </div>
+
+                    {/* Admin Image Lightbox */}
+                    {adminPreviewLightbox && (
+                      <div
+                        onClick={() => setAdminPreviewLightbox(null)}
+                        className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+                      >
+                        <div className="relative max-w-4xl max-h-[85vh]">
+                          <button
+                            onClick={() => setAdminPreviewLightbox(null)}
+                            className="absolute -top-10 right-0 text-white hover:text-zinc-300 p-1 cursor-pointer"
+                          >
+                            <X className="w-6 h-6" />
+                          </button>
+                          <img
+                            src={adminPreviewLightbox}
+                            alt="Full size attachment"
+                            className="max-h-[80vh] max-w-full rounded-xl object-contain shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-xs text-zinc-400">
                     Select a conversation on the left to read and respond.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5.5: USER ACCOUNTS & ROLES */}
+          {activeTab === 'users' && (
+            <div className="space-y-6">
+              <div className="pb-4 border-b border-zinc-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-zinc-950 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-purple-600" />
+                    <span>User Accounts & Security Roles</span>
+                  </h2>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Live accounts stored in Firestore <code className="text-zinc-700 bg-zinc-100 px-1 py-0.5 rounded font-mono">users</code> and <code className="text-zinc-700 bg-zinc-100 px-1 py-0.5 rounded font-mono">admins</code> collections.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Search name, email, or UID..."
+                      value={userSearchTerm}
+                      onChange={(e) => setUserSearchTerm(e.target.value)}
+                      className="pl-9 pr-3 py-1.5 text-xs border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 w-56 sm:w-64"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Metrics Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
+                    Total Marketplace Users
+                  </span>
+                  <span className="text-2xl font-black text-zinc-950 font-mono tabular-nums">
+                    {usersList.length}
+                  </span>
+                </div>
+                <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-200">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 block mb-1">
+                    Platform Administrators
+                  </span>
+                  <span className="text-2xl font-black text-emerald-700 font-mono tabular-nums">
+                    {usersList.filter((u) => u.role === 'admin').length}
+                  </span>
+                </div>
+                <div className="p-4 bg-purple-50/50 rounded-xl border border-purple-200">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-700 block mb-1">
+                    Anonymous Chat Visitors
+                  </span>
+                  <span className="text-2xl font-black text-purple-700 font-mono tabular-nums">
+                    {usersList.filter((u) => u.isAnonymous).length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Users Table */}
+              <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-zinc-50 border-b border-zinc-200 text-zinc-500 uppercase font-bold tracking-wider text-[11px]">
+                      <th className="py-3 px-4">User</th>
+                      <th className="py-3 px-4">Firebase Account UID</th>
+                      <th className="py-3 px-4">Type</th>
+                      <th className="py-3 px-4">Role</th>
+                      <th className="py-3 px-4">Created Date</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {usersList
+                      .filter((u) => {
+                        if (!userSearchTerm.trim()) return true;
+                        const term = userSearchTerm.toLowerCase();
+                        return (
+                          (u.displayName && u.displayName.toLowerCase().includes(term)) ||
+                          (u.email && u.email.toLowerCase().includes(term)) ||
+                          u.id.toLowerCase().includes(term)
+                        );
+                      })
+                      .map((u) => {
+                        const isSelf = u.id === adminId || (u.email && u.email === adminEmail);
+                        const isOwner = u.email?.toLowerCase() === 'sirrodstephen@gmail.com';
+
+                        return (
+                          <tr key={u.id} className="hover:bg-zinc-50/80 transition-colors">
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs uppercase">
+                                  {u.displayName ? u.displayName.charAt(0) : 'U'}
+                                </div>
+                                <div>
+                                  <div className="font-semibold text-zinc-900">
+                                    {u.displayName || 'Unnamed User'}
+                                    {isSelf && (
+                                      <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.2 rounded">
+                                        You
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-zinc-500">
+                                    {u.email || (u.isAnonymous ? 'Anonymous Session' : 'No email')}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-4 font-mono text-[11px] text-zinc-600">
+                              <span
+                                className="hover:text-blue-600 cursor-pointer select-all"
+                                title="Click to copy UID"
+                                onClick={() => {
+                                  navigator.clipboard?.writeText(u.id);
+                                }}
+                              >
+                                {u.id.slice(0, 14)}...
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-4">
+                              {u.isAnonymous ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-700 border border-zinc-200">
+                                  Anonymous
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                  Google Account
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-4">
+                              {u.role === 'admin' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                                  <span>Administrator</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-700 border border-zinc-200">
+                                  Standard User
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-4 text-zinc-500 font-mono text-[11px]">
+                              {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'Recent'}
+                            </td>
+
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                {!isOwner && (
+                                  <button
+                                    onClick={() => handleToggleUserRole(u)}
+                                    disabled={userActionLoading === u.id}
+                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer border ${
+                                      u.role === 'admin'
+                                        ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                                        : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                                    }`}
+                                  >
+                                    {u.role === 'admin' ? 'Revoke Admin' : 'Promote to Admin'}
+                                  </button>
+                                )}
+
+                                {!isSelf && !isOwner && (
+                                  <button
+                                    onClick={() => handleDeleteUser(u)}
+                                    disabled={userActionLoading === u.id}
+                                    className="p-1 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                    title="Delete user profile"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+
+                {usersList.length === 0 && (
+                  <div className="text-center py-12 text-xs text-zinc-400">
+                    No users recorded in Firestore yet. User profiles are automatically created when visitors browse, save items, or request chat.
                   </div>
                 )}
               </div>

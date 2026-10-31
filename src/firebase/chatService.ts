@@ -192,17 +192,22 @@ export function subscribeToRealMessages(
 }
 
 /**
- * Send real human message
+ * Send real human message with optional image attachment
  */
 export async function sendRealHumanMessage(
   conversationId: string,
   from: 'visitor' | 'admin',
   senderId: string,
   senderName: string,
-  text: string
+  text: string,
+  imageUrl?: string,
+  imageCaption?: string
 ): Promise<Message> {
   const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const now = new Date().toISOString();
+
+  const trimmedText = text.trim();
+  const summaryText = trimmedText || (imageUrl ? '📷 Photo' : '');
 
   const newMsg: Message = {
     id: messageId,
@@ -210,10 +215,12 @@ export async function sendRealHumanMessage(
     from,
     senderId,
     senderName,
-    text: text.trim(),
+    text: trimmedText,
     time: now,
     real: true,
     createdAt: now,
+    ...(imageUrl ? { imageUrl } : {}),
+    ...(imageCaption ? { imageCaption } : {}),
   };
 
   try {
@@ -223,7 +230,7 @@ export async function sendRealHumanMessage(
     // Update conversation record
     const convRef = doc(db, 'conversations', conversationId);
     const updateData: Partial<Conversation> = {
-      lastMessageText: text.trim(),
+      lastMessageText: summaryText,
       lastMessageTime: now,
       updatedAt: now,
     };
@@ -382,7 +389,14 @@ export async function sendMessage(
   text: string,
   imageUrl?: string
 ): Promise<Message> {
-  return sendRealHumanMessage(conversationId, senderRole, senderId, senderName, text);
+  return sendRealHumanMessage(
+    conversationId,
+    senderRole,
+    senderId,
+    senderName,
+    text,
+    imageUrl
+  );
 }
 
 export async function markMessagesAsRead(

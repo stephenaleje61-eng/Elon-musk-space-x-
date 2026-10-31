@@ -2,43 +2,64 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Test connection check
+    // Global helper primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwnerAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email != null && request.auth.token.email.lower() == 'sirrodstephen@gmail.com') ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Health check & connection validation
     match /test/{docId} {
       allow read: if true;
     }
 
-    // Admins Collection
+    // Administrators Collection (Restricted to owner or matching authenticated UID)
     match /admins/{adminId} {
-      allow read, write: if true;
+      allow read: if isOwnerAdmin() || (isSignedIn() && request.auth.uid == adminId);
+      allow write: if isOwnerAdmin();
     }
 
-    // Users Collection
+    // Users Collection (Public profiles with admin management)
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (request.auth.uid == userId || isOwnerAdmin());
+      allow delete: if isOwnerAdmin();
     }
 
-    // Products Collection (Public Catalog & Admin Management)
+    // Products Catalog (Public catalog browsing, Admin-only modifications)
     match /products/{productId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isOwnerAdmin();
     }
 
-    // Articles Collection (Public Articles & Tech Updates)
+    // Articles & Deep Dives (Public reading, Admin-only publishing)
     match /articles/{articleId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isOwnerAdmin();
     }
 
-    // Categories Collection
+    // Categories Hierarchy
     match /categories/{categoryId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isOwnerAdmin();
     }
 
-    // Conversations Collection (Real Human Chat & Join Requests)
+    // Private Conversations (Visitors request chat, Admin accepts and manages)
     match /conversations/{conversationId} {
-      allow read, write: if true;
+      allow read, create, update: if true;
+      allow delete: if isOwnerAdmin();
 
-      // Nested Messages Subcollection
+      // Messages Subcollection
       match /messages/{messageId} {
-        allow read, write: if true;
+        allow read, create: if true;
+        allow update, delete: if isOwnerAdmin();
       }
     }
 
@@ -57,14 +78,15 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // Reports Collection
+    // User Moderation Reports (Public create, Admin-only triage and resolution)
     match /reports/{reportId} {
-      allow read, write: if true;
+      allow create: if true;
+      allow read, update, delete: if isOwnerAdmin();
     }
 
-    // Admin Audit Logs
+    // Admin Audit Logs (Strictly Admin-only)
     match /adminAuditLogs/{logId} {
-      allow read, write: if true;
+      allow read, write: if isOwnerAdmin();
     }
   }
 }

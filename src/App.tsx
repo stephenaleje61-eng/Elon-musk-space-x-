@@ -53,6 +53,7 @@ export default function App() {
   // Auth State
   const [user, setUser] = useState<{ uid: string; email?: string | null } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminEmail, setAdminEmail] = useState<string>('');
 
   // Modals & Drawers
   const [chatOpen, setChatOpen] = useState(false);
@@ -135,6 +136,7 @@ export default function App() {
   const handleLogout = async () => {
     await logOutUser();
     setIsAdmin(false);
+    setAdminEmail('');
     setCurrentView('home');
   };
 
@@ -187,7 +189,7 @@ export default function App() {
           <AdminDashboard
             products={products}
             articles={articles}
-            adminEmail={user?.email || 'sirrodstephen@gmail.com'}
+            adminEmail={user?.email || adminEmail || 'sirrodstephen@gmail.com'}
             adminId={user?.uid || 'admin'}
             onLogout={handleLogout}
             onBackToStore={() => setCurrentView('home')}
@@ -478,6 +480,7 @@ export default function App() {
         isOpen={adminAuthOpen}
         onClose={() => setAdminAuthOpen(false)}
         onSuccess={(email) => {
+          setAdminEmail(email);
           setIsAdmin(true);
           setCurrentView('admin');
         }}
@@ -500,6 +503,7 @@ export default function App() {
         }}
         onOpenChat={handleOpenChat}
         onOpenPolicy={(type) => setPolicyType(type)}
+        onOpenAdminAuth={() => setAdminAuthOpen(true)}
       />
     </div>
   );

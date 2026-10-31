@@ -7,12 +7,14 @@ interface FooterProps {
   onNavigateSection: (sectionId: SectionId) => void;
   onOpenChat: (initialMessage?: string) => void;
   onOpenPolicy: (type: 'privacy' | 'terms' | 'disclaimer') => void;
+  onOpenAdminAuth?: () => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
   onNavigateSection,
   onOpenChat,
   onOpenPolicy,
+  onOpenAdminAuth,
 }) => {
   return (
     <footer className="bg-zinc-950 text-white border-t border-zinc-800">
@@ -203,6 +205,16 @@ export const Footer: React.FC<FooterProps> = ({
                   Terms & Conditions
                 </button>
               </li>
+              {onOpenAdminAuth && (
+                <li>
+                  <button
+                    onClick={onOpenAdminAuth}
+                    className="text-zinc-500 hover:text-emerald-400 transition-colors cursor-pointer text-left flex items-center gap-1 text-[11px]"
+                  >
+                    <span>Admin Control Console</span>
+                  </button>
+                </li>
+              )}
             </ul>
           </div>
         </div>

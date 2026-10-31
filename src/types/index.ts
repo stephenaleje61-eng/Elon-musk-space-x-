@@ -94,6 +94,8 @@ export interface Message {
   senderId: string;
   senderName: string;
   text: string;
+  imageUrl?: string;
+  imageCaption?: string;
   time: string;
   real: true;
   createdAt: string;

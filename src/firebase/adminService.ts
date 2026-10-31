@@ -99,6 +99,84 @@ export async function resolveReport(reportId: string): Promise<void> {
 }
 
 /**
+ * Subscribe to all users in Firestore
+ */
+export function subscribeToUsers(callback: (users: UserProfile[]) => void) {
+  const colRef = collection(db, 'users');
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const list: UserProfile[] = [];
+      snapshot.forEach((d) => {
+        list.push({ ...d.data(), id: d.id } as UserProfile);
+      });
+      callback(list);
+    },
+    (err) => {
+      console.warn('Users listener notice:', err);
+      callback([]);
+    }
+  );
+}
+
+/**
+ * Update user role (e.g., promote to admin or set user)
+ */
+export async function updateUserRole(userId: string, role: 'admin' | 'user'): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'users', userId), {
+      role,
+      updatedAt: new Date().toISOString(),
+    });
+    if (role === 'admin') {
+      await setDoc(doc(db, 'admins', userId), {
+        id: userId,
+        role: 'admin',
+        addedAt: new Date().toISOString(),
+      }, { merge: true });
+    } else {
+      await deleteDoc(doc(db, 'admins', userId));
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+  }
+}
+
+/**
+ * Delete a user profile from Firestore
+ */
+export async function deleteUserDoc(userId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'users', userId));
+    await deleteDoc(doc(db, 'admins', userId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${userId}`);
+  }
+}
+
+/**
+ * Grant admin privileges by UID
+ */
+export async function grantAdminByUid(uid: string, email?: string): Promise<void> {
+  try {
+    await setDoc(doc(db, 'admins', uid), {
+      id: uid,
+      email: email || '',
+      role: 'admin',
+      addedAt: new Date().toISOString(),
+    }, { merge: true });
+    await setDoc(doc(db, 'users', uid), {
+      id: uid,
+      role: 'admin',
+      email: email || '',
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `admins/${uid}`);
+  }
+}
+
+/**
  * Get registered & anonymous user count
  */
 export async function getMarketplaceMetrics() {
@@ -120,3 +198,4 @@ export async function getMarketplaceMetrics() {
     };
   }
 }
+
