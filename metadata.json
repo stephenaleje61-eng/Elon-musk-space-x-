@@ -1,0 +1,6 @@
+{
+  "name": "ELON MUSK SPACE — Global Technology Marketplace",
+  "description": "Premium global technology marketplace exploring Tesla, SpaceX, Starlink, xAI, Neuralink, Boring Company, robotics, and verified investment intelligence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

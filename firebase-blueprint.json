@@ -1,0 +1,259 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Registered or anonymous marketplace user profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "isAnonymous": { "type": "boolean" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "isAnonymous", "role"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Technology hardware, vehicle, or equipment listing",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "sectionId": { "type": "string" },
+        "category": { "type": "string" },
+        "price": { "type": "number" },
+        "specs": { "type": "object" },
+        "images": { "type": "array" },
+        "description": { "type": "string" },
+        "isFeatured": { "type": "boolean" },
+        "inStock": { "type": "boolean" },
+        "inventoryCount": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["id", "title", "sectionId", "category", "price", "images", "description"]
+    },
+    "Article": {
+      "title": "Article",
+      "description": "Deep-dive technology updates and scientific publications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "sectionId": { "type": "string" },
+        "category": { "type": "string" },
+        "author": { "type": "string" },
+        "readTime": { "type": "string" },
+        "coverImage": { "type": "string" },
+        "content": { "type": "string" },
+        "tags": { "type": "array" },
+        "isFeatured": { "type": "boolean" },
+        "publishedAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "sectionId", "coverImage", "content"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Taxonomy node within one of the 9 technology sections",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sectionId": { "type": "string" },
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "description": { "type": "string" },
+        "itemCount": { "type": "number" }
+      },
+      "required": ["id", "sectionId", "name", "slug"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Private 1-to-1 conversation between a visitor and platform administrator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "visitorId": { "type": "string" },
+        "visitorName": { "type": "string" },
+        "visitorLocation": { "type": "string" },
+        "initialMessage": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "submittedAt": { "type": "string" },
+        "acceptedAt": { "type": "string" },
+        "declinedAt": { "type": "string" },
+        "lastMessageText": { "type": "string" },
+        "lastMessageTime": { "type": "string" },
+        "unreadAdminCount": { "type": "number" },
+        "unreadVisitorCount": { "type": "number" },
+        "isBlocked": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "visitorId", "status", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Real message genuinely sent by human participant",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "from": { "type": "string", "enum": ["visitor", "admin"] },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "time": { "type": "string" },
+        "real": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "conversationId", "from", "text", "time", "real", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Platform or account activity alert",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "message", "read"]
+    },
+    "SavedItem": {
+      "title": "SavedItem",
+      "description": "User bookmarked item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "itemId": { "type": "string" },
+        "itemType": { "type": "string", "enum": ["product", "article"] },
+        "title": { "type": "string" },
+        "image": { "type": "string" },
+        "price": { "type": "number" },
+        "sectionId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "itemId", "itemType", "title"]
+    },
+    "InvestmentWatchlist": {
+      "title": "InvestmentWatchlist",
+      "description": "Personal investor watchlist entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "symbol": { "type": "string" },
+        "name": { "type": "string" },
+        "targetPrice": { "type": "number" },
+        "notes": { "type": "string" },
+        "addedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "symbol", "name"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Report on flagged message or conversation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "messageId": { "type": "string" },
+        "reporterId": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "resolved"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "conversationId", "reporterId", "reason", "status"]
+    },
+    "AdminAuditLog": {
+      "title": "AdminAuditLog",
+      "description": "Audit trail of administrator actions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "adminId": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "action": { "type": "string" },
+        "targetType": { "type": "string" },
+        "targetId": { "type": "string" },
+        "details": { "type": "object" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "adminId", "action", "targetType", "timestamp"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorized platform administrator document",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "addedAt": { "type": "string" }
+      },
+      "required": ["id", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and settings"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Marketplace products across 9 technology sections"
+    },
+    "/articles/{articleId}": {
+      "schema": "Article",
+      "description": "Technology articles and research publications"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Section categories and catalog hierarchy"
+    },
+    "/conversations/{conversationId}": {
+      "schema": "Conversation",
+      "description": "Private visitor-to-admin conversations"
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages inside a private conversation"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User and admin notifications"
+    },
+    "/savedItems/{savedItemId}": {
+      "schema": "SavedItem",
+      "description": "User bookmarked products and articles"
+    },
+    "/investmentWatchlists/{watchlistId}": {
+      "schema": "InvestmentWatchlist",
+      "description": "Personal investment watchlists"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Reported conversations and messages"
+    },
+    "/adminAuditLogs/{logId}": {
+      "schema": "AdminAuditLog",
+      "description": "Audit logs for administrative operations"
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "List of authorized administrator user IDs"
+    }
+  }
+}
