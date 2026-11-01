@@ -4,20 +4,42 @@ import {
   GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
   User as FirebaseUser,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './config';
 import { UserProfile } from '../types';
 
-export const ADMIN_BOOTSTRAP_EMAIL = 'sirrodstephen@gmail.com';
+export const OWNER_GOOGLE_EMAIL = 'sirrodstephen@gmail.com';
+export const OWNER_FIREBASE_UID = '4W2iB38N41cR0hXfN1tP4f4M5uE2';
+export const ADMIN_BOOTSTRAP_EMAIL = OWNER_GOOGLE_EMAIL;
 
-// Check if a user is an authorized administrator
+// Ensure persistence is configured
+try {
+  setPersistence(auth, browserLocalPersistence).catch((err) => {
+    console.warn('Auth persistence initialization notice:', err);
+  });
+} catch {
+  // ignore
+}
+
+// Check if a user is the explicitly authorized website owner
 export async function checkIsAdmin(user: FirebaseUser | null): Promise<boolean> {
   if (!user) return false;
-  if (user.email && user.email.toLowerCase() === ADMIN_BOOTSTRAP_EMAIL.toLowerCase()) {
+
+  // 1. Direct match on authenticated Google Email
+  if (user.email && user.email.toLowerCase() === OWNER_GOOGLE_EMAIL.toLowerCase()) {
     return true;
   }
+
+  // 2. Direct match on authenticated Firebase UID
+  if (user.uid === OWNER_FIREBASE_UID) {
+    return true;
+  }
+
+  // 3. Document in /admins/{uid}
   try {
     const adminDoc = await getDoc(doc(db, 'admins', user.uid));
     if (adminDoc.exists()) {
@@ -26,7 +48,8 @@ export async function checkIsAdmin(user: FirebaseUser | null): Promise<boolean> 
   } catch {
     // silently fail
   }
-  // Check user profile
+
+  // 4. Check user profile in /users/{uid}
   try {
     const userDoc = await getDoc(doc(db, 'users', user.uid));
     if (userDoc.exists() && userDoc.data().role === 'admin') {
@@ -35,6 +58,7 @@ export async function checkIsAdmin(user: FirebaseUser | null): Promise<boolean> 
   } catch {
     // fallback
   }
+
   return false;
 }
 
@@ -84,31 +108,48 @@ export async function ensureAnonymousAuth(): Promise<{
 // Sign in with Google (preferred for popup auth)
 export async function signInWithGoogle(): Promise<FirebaseUser> {
   const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
   try {
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+    } catch {
+      // ignore
+    }
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
-    const isAdminUser = user.email?.toLowerCase() === ADMIN_BOOTSTRAP_EMAIL.toLowerCase();
+    const isOwner =
+      (user.email && user.email.toLowerCase() === OWNER_GOOGLE_EMAIL.toLowerCase()) ||
+      user.uid === OWNER_FIREBASE_UID;
 
     const profile: UserProfile = {
       id: user.uid,
       email: user.email || undefined,
-      displayName: user.displayName || 'Authorized User',
+      displayName: user.displayName || (isOwner ? 'Platform Administrator' : 'Authorized User'),
       photoURL: user.photoURL || undefined,
       isAnonymous: false,
-      role: isAdminUser ? 'admin' : 'user',
+      role: isOwner ? 'admin' : 'user',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    await setDoc(doc(db, 'users', user.uid), profile, { merge: true });
+    try {
+      await setDoc(doc(db, 'users', user.uid), profile, { merge: true });
+    } catch (e) {
+      console.warn('Profile sync notice:', e);
+    }
 
-    if (isAdminUser) {
-      await setDoc(doc(db, 'admins', user.uid), {
-        id: user.uid,
-        email: user.email,
-        role: 'admin',
-        addedAt: new Date().toISOString(),
-      }, { merge: true });
+    if (isOwner) {
+      try {
+        await setDoc(doc(db, 'admins', user.uid), {
+          id: user.uid,
+          email: user.email || OWNER_GOOGLE_EMAIL,
+          role: 'admin',
+          addedAt: new Date().toISOString(),
+        }, { merge: true });
+        localStorage.setItem('elon_admin_authorized_email', user.email || OWNER_GOOGLE_EMAIL);
+      } catch (e) {
+        console.warn('Admin record sync notice:', e);
+      }
     }
 
     return user;
@@ -120,6 +161,7 @@ export async function signInWithGoogle(): Promise<FirebaseUser> {
 
 // Sign out
 export async function logOutUser(): Promise<void> {
+  localStorage.removeItem('elon_admin_authorized_email');
   await signOut(auth);
 }
 

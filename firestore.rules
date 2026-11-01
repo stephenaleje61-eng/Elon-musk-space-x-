@@ -10,6 +10,7 @@ service cloud.firestore {
     function isOwnerAdmin() {
       return isSignedIn() && (
         (request.auth.token.email != null && request.auth.token.email.lower() == 'sirrodstephen@gmail.com') ||
+        (request.auth.uid == '4W2iB38N41cR0hXfN1tP4f4M5uE2') ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
@@ -21,8 +22,8 @@ service cloud.firestore {
 
     // Administrators Collection (Restricted to owner or matching authenticated UID)
     match /admins/{adminId} {
-      allow read: if isOwnerAdmin() || (isSignedIn() && request.auth.uid == adminId);
-      allow write: if isOwnerAdmin();
+      allow read: if isOwnerAdmin() || (isSignedIn() && (request.auth.uid == adminId || adminId == '4W2iB38N41cR0hXfN1tP4f4M5uE2'));
+      allow write: if isOwnerAdmin() || (isSignedIn() && (request.auth.uid == '4W2iB38N41cR0hXfN1tP4f4M5uE2' || (request.auth.token.email != null && request.auth.token.email.lower() == 'sirrodstephen@gmail.com')));
     }
 
     // Users Collection (Public profiles with admin management)

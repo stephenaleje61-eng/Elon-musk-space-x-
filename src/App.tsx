@@ -4,6 +4,7 @@ import {
   TrendingUp,
   ArrowRight,
   ShieldCheck,
+  ShieldAlert,
   Sparkles,
   Zap,
   Globe,
@@ -89,9 +90,13 @@ export default function App() {
       if (fbUser) {
         setUser({ uid: fbUser.uid, email: fbUser.email });
         setIsAdmin(isUserAdmin);
+        if (isUserAdmin) {
+          setAdminEmail(fbUser.email || 'sirrodstephen@gmail.com');
+        }
       } else {
         setUser(null);
         setIsAdmin(false);
+        setAdminEmail('');
       }
     });
 
@@ -208,6 +213,33 @@ export default function App() {
             onLogout={handleLogout}
             onBackToStore={() => setCurrentView('home')}
           />
+        )}
+
+        {/* RESTRICTED ACCESS SCREEN IF CURRENT VIEW IS ADMIN BUT NOT ADMIN */}
+        {currentView === 'admin' && !isAdmin && (
+          <div className="max-w-xl mx-auto my-20 p-8 text-center bg-white rounded-2xl border border-zinc-200 shadow-sm">
+            <div className="w-16 h-16 mx-auto mb-4 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 border border-amber-200">
+              <ShieldAlert className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-zinc-950 mb-2">Administrator Access Restricted</h2>
+            <p className="text-sm text-zinc-600 mb-6 leading-relaxed">
+              The Administrator Control Console is restricted exclusively to the verified website owner (<span className="font-mono font-medium text-zinc-900">sirrodstephen@gmail.com</span>). Ordinary visitors cannot access administrative tools.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                onClick={() => setAdminAuthOpen(true)}
+                className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl transition shadow-sm cursor-pointer"
+              >
+                Sign In as Website Owner
+              </button>
+              <button
+                onClick={() => setCurrentView('home')}
+                className="w-full sm:w-auto px-5 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-medium text-sm rounded-xl transition cursor-pointer"
+              >
+                Return to Homepage
+              </button>
+            </div>
+          </div>
         )}
 
         {/* VIEW: INVESTMENT HUB (SECTION 09) */}
