@@ -204,6 +204,14 @@
         "addedAt": { "type": "string" }
       },
       "required": ["id", "email", "role"]
+    },
+    "TestConnection": {
+      "title": "TestConnection",
+      "description": "Health check document for connection verification",
+      "type": "object",
+      "properties": {
+        "status": { "type": "string" }
+      }
     }
   },
   "firestore": {
@@ -254,6 +262,10 @@
     "/admins/{adminId}": {
       "schema": "Admin",
       "description": "List of authorized administrator user IDs"
+    },
+    "/test/{docId}": {
+      "schema": "TestConnection",
+      "description": "Health check and connection verification"
     }
   }
 }

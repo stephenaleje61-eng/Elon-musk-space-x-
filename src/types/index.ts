@@ -154,3 +154,27 @@ export interface AdminAuditLog {
   details?: Record<string, unknown>;
   timestamp: string;
 }
+
+export type VerificationStatus = 'unverified' | 'pending_audit' | 'verified' | 'rejected';
+
+export interface VerificationRecord {
+  id: string; // 'current_status'
+  status: VerificationStatus;
+  isVerified: boolean;
+  legalOwnerName: string;
+  operatingCompanyName: string;
+  companyRegistrationNumber?: string;
+  jurisdiction?: string;
+  officialContactEmail: string;
+  officialSupportPhone?: string;
+  registeredAddress?: string;
+  verificationProvider?: string;
+  verificationDate?: string;
+  verificationSourceUrl?: string;
+  certificateId?: string;
+  documentAuditNotes?: string;
+  disclaimer: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+

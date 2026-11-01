@@ -1,12 +1,15 @@
 import React from 'react';
 import { ArrowRight, MessageSquare, TrendingUp, Cpu, ShoppingBag, ShieldAlert } from 'lucide-react';
-import { SectionId } from '../types';
+import { SectionId, VerificationRecord } from '../types';
+import { VerificationBadge } from './VerificationBadge';
 
 interface WelcomeHeroProps {
   onExploreProducts: () => void;
   onExploreTechnology: () => void;
   onInvestmentInfo: () => void;
   onChatPrivately: () => void;
+  verificationRecord?: VerificationRecord | null;
+  onOpenVerification?: () => void;
 }
 
 export const WelcomeHero: React.FC<WelcomeHeroProps> = ({
@@ -14,6 +17,8 @@ export const WelcomeHero: React.FC<WelcomeHeroProps> = ({
   onExploreTechnology,
   onInvestmentInfo,
   onChatPrivately,
+  verificationRecord,
+  onOpenVerification,
 }) => {
   return (
     <section className="relative bg-zinc-950 text-white overflow-hidden border-b border-zinc-800">
@@ -33,10 +38,20 @@ export const WelcomeHero: React.FC<WelcomeHeroProps> = ({
       </div>
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 lg:py-32">
-        {/* Subtle Independent Disclaimer Alert Badge */}
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800 text-zinc-300 text-xs font-medium mb-6 backdrop-blur-sm">
-          <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
-          <span>Independent Platform · Not officially operated or endorsed by Elon Musk</span>
+        {/* Subtle Independent Disclaimer Alert Badge & Verification Badge Row */}
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800 text-zinc-300 text-xs font-medium backdrop-blur-sm">
+            <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
+            <span>Independent Platform · Not officially operated or endorsed by Elon Musk</span>
+          </div>
+
+          {verificationRecord && (
+            <VerificationBadge
+              record={verificationRecord}
+              size="md"
+              onClick={onOpenVerification}
+            />
+          )}
         </div>
 
         {/* Main Display Headline & Subtitle */}

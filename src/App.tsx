@@ -13,13 +13,15 @@ import {
   Share2,
 } from 'lucide-react';
 import { SECTIONS } from './data/sections';
-import { Product, Article, SavedItem, SectionId } from './types';
+import { Product, Article, SavedItem, SectionId, VerificationRecord } from './types';
 import {
   seedDatabaseIfEmpty,
   subscribeToProducts,
   subscribeToArticles,
   subscribeToSavedItems,
   toggleSavedItem,
+  subscribeToVerificationRecord,
+  DEFAULT_VERIFICATION_RECORD,
 } from './firebase/database';
 import { subscribeToAuth, ensureAnonymousAuth, logOutUser } from './firebase/auth';
 
@@ -38,10 +40,12 @@ import { SearchModal } from './components/SearchModal';
 import { SavedDrawer } from './components/SavedDrawer';
 import { Footer } from './components/Footer';
 import { LegalPolicyModal } from './components/LegalPolicyModal';
+import { OwnershipVerificationSection } from './components/OwnershipVerificationSection';
+import { OwnershipVerificationModal } from './components/OwnershipVerificationModal';
 
 export default function App() {
   // Navigation State
-  const [currentView, setCurrentView] = useState<SectionId | 'home' | 'investment-hub' | 'admin'>('home');
+  const [currentView, setCurrentView] = useState<SectionId | 'home' | 'investment-hub' | 'admin' | 'verification'>('home');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   // Firestore Data State
@@ -49,6 +53,7 @@ export default function App() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
   const [savedItemIds, setSavedItemIds] = useState<Set<string>>(new Set());
+  const [verificationRecord, setVerificationRecord] = useState<VerificationRecord>(DEFAULT_VERIFICATION_RECORD);
 
   // Auth State
   const [user, setUser] = useState<{ uid: string; email?: string | null } | null>(null);
@@ -61,6 +66,7 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [savedDrawerOpen, setSavedDrawerOpen] = useState(false);
   const [adminAuthOpen, setAdminAuthOpen] = useState(false);
+  const [verificationModalOpen, setVerificationModalOpen] = useState(false);
   const [policyType, setPolicyType] = useState<'privacy' | 'terms' | 'disclaimer' | null>(null);
 
   // Initialize Firebase listeners and database seeding
@@ -89,10 +95,16 @@ export default function App() {
       }
     });
 
+    // 5. Verification Record Listener
+    const unsubVerification = subscribeToVerificationRecord((rec) => {
+      setVerificationRecord(rec);
+    });
+
     return () => {
       unsubProducts();
       unsubArticles();
       unsubAuth();
+      unsubVerification();
     };
   }, []);
 
@@ -165,6 +177,8 @@ export default function App() {
         userEmail={user?.email}
         onLogout={handleLogout}
         onOpenAdminAuth={() => setAdminAuthOpen(true)}
+        verificationRecord={verificationRecord}
+        onOpenVerification={() => setVerificationModalOpen(true)}
       />
 
       {/* Nine Sections Fast Bar (visible across main views) */}
@@ -201,10 +215,21 @@ export default function App() {
           <InvestmentHubView onOpenChat={handleOpenChat} />
         )}
 
+        {/* VIEW: OWNERSHIP & AUTHENTICITY VERIFICATION */}
+        {currentView === 'verification' && (
+          <OwnershipVerificationSection
+            record={verificationRecord}
+            onOpenPolicy={(type) => setPolicyType(type)}
+            onOpenAdminAuth={() => setAdminAuthOpen(true)}
+            isAdmin={isAdmin}
+          />
+        )}
+
         {/* VIEW: SECTION DETAIL VIEW (SECTIONS 1–8) */}
         {currentView !== 'home' &&
           currentView !== 'admin' &&
           currentView !== 'investment-hub' &&
+          currentView !== 'verification' &&
           SECTIONS.find((s) => s.id === currentView) && (
             <SectionView
               section={SECTIONS.find((s) => s.id === currentView)!}
@@ -236,6 +261,8 @@ export default function App() {
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               onChatPrivately={() => handleOpenChat()}
+              verificationRecord={verificationRecord}
+              onOpenVerification={() => setVerificationModalOpen(true)}
             />
 
             {/* Nine Sections Architectural Showcase */}
@@ -431,6 +458,14 @@ export default function App() {
                 ))}
               </div>
             </section>
+
+            {/* Official Ownership & Authenticity Verification Section on Homepage */}
+            <OwnershipVerificationSection
+              record={verificationRecord}
+              onOpenPolicy={(type) => setPolicyType(type)}
+              onOpenAdminAuth={() => setAdminAuthOpen(true)}
+              isAdmin={isAdmin}
+            />
           </div>
         )}
       </main>
@@ -491,6 +526,13 @@ export default function App() {
         onClose={() => setPolicyType(null)}
       />
 
+      <OwnershipVerificationModal
+        isOpen={verificationModalOpen}
+        onClose={() => setVerificationModalOpen(false)}
+        record={verificationRecord}
+        onOpenPolicy={(type) => setPolicyType(type)}
+      />
+
       {/* Footer */}
       <Footer
         onNavigateSection={(secId) => {
@@ -504,6 +546,8 @@ export default function App() {
         onOpenChat={handleOpenChat}
         onOpenPolicy={(type) => setPolicyType(type)}
         onOpenAdminAuth={() => setAdminAuthOpen(true)}
+        verificationRecord={verificationRecord}
+        onOpenVerification={() => setVerificationModalOpen(true)}
       />
     </div>
   );

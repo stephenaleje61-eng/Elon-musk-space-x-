@@ -1,13 +1,15 @@
-import React from 'react';
-import { ShieldAlert, ArrowUpRight, MessageSquare, Globe, Heart } from 'lucide-react';
+import { ShieldAlert, ArrowUpRight, MessageSquare, Globe, Heart, ShieldCheck } from 'lucide-react';
 import { SECTIONS } from '../data/sections';
-import { SectionId } from '../types';
+import { SectionId, VerificationRecord } from '../types';
+import { VerificationBadge } from './VerificationBadge';
 
 interface FooterProps {
   onNavigateSection: (sectionId: SectionId) => void;
   onOpenChat: (initialMessage?: string) => void;
   onOpenPolicy: (type: 'privacy' | 'terms' | 'disclaimer') => void;
   onOpenAdminAuth?: () => void;
+  verificationRecord?: VerificationRecord | null;
+  onOpenVerification?: () => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
@@ -15,6 +17,8 @@ export const Footer: React.FC<FooterProps> = ({
   onOpenChat,
   onOpenPolicy,
   onOpenAdminAuth,
+  verificationRecord,
+  onOpenVerification,
 }) => {
   return (
     <footer className="bg-zinc-950 text-white border-t border-zinc-800">
@@ -205,6 +209,17 @@ export const Footer: React.FC<FooterProps> = ({
                   Terms & Conditions
                 </button>
               </li>
+              {onOpenVerification && (
+                <li>
+                  <button
+                    onClick={onOpenVerification}
+                    className="hover:text-blue-400 text-blue-300 font-semibold transition-colors cursor-pointer text-left flex items-center gap-1.5"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Ownership & Verification</span>
+                  </button>
+                </li>
+              )}
               {onOpenAdminAuth && (
                 <li>
                   <button
@@ -219,13 +234,26 @@ export const Footer: React.FC<FooterProps> = ({
           </div>
         </div>
 
-        {/* Clear Independent Platform Disclaimer as required in Prompt #5 */}
-        <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-400 mb-8 leading-relaxed">
-          <div className="font-semibold text-zinc-200 mb-1 flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-blue-400" />
-            <span>Independent Platform Statement</span>
+        {/* Clear Independent Platform Disclaimer & Verification Status */}
+        <div className="p-5 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-400 mb-8 leading-relaxed flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="font-bold text-zinc-100 flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-blue-400 shrink-0" />
+              <span>Independent Platform Statement & Non-Affiliation Notice</span>
+            </div>
+            <p className="text-zinc-300">
+              ELON MUSK SPACE is an independent technology catalog, space commerce index, and market intelligence platform. This website is NOT officially operated, owned, or endorsed by Elon Musk, Tesla Inc., SpaceX, Starlink, xAI, Neuralink, The Boring Company, or X Corp. All brand names, trademarks, and registered logos remain the property of their respective holders.
+            </p>
           </div>
-          ELON MUSK SPACE is an independent technology catalog, space commerce index, and market intelligence platform. This website is NOT officially operated, owned, or endorsed by Elon Musk, Tesla Inc., SpaceX, Starlink, xAI, Neuralink, The Boring Company, or X Corp. All brand names, trademarks, and registered logos remain the property of their respective holders.
+          {verificationRecord && (
+            <div className="shrink-0 flex items-center gap-2">
+              <VerificationBadge
+                record={verificationRecord}
+                size="md"
+                onClick={onOpenVerification}
+              />
+            </div>
+          )}
         </div>
 
         {/* Bottom copyright */}

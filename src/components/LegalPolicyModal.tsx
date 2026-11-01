@@ -41,6 +41,10 @@ export const LegalPolicyModal: React.FC<LegalPolicyModalProps> = ({ type, onClos
               <p>
                 Product specifications, pricing estimates, and delivery manifests are compiled for global technology buyers and aerospace researchers. Inquiries initiated through &quot;Chat Elon Musk&quot; connect visitors with the platform administrative team.
               </p>
+              <h4 className="font-bold text-sm text-zinc-950">4. Ownership & Authenticity Verification</h4>
+              <p>
+                In compliance with strict governance standards, ELON MUSK SPACE maintains an independently verifiable ownership and corporate identity registry. The platform strictly prohibits fabricated endorsements, fake partnerships, or unauthorized claims of ownership. Official verification credentials and blue badges are granted only following independent validation by an authorized verification provider.
+              </p>
             </>
           )}
 

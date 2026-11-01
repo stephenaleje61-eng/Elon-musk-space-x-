@@ -21,7 +21,9 @@ import {
   ReportItem,
   AdminAuditLog,
   SectionId,
+  VerificationRecord,
 } from '../types';
+import { logAdminAction } from './adminService';
 
 // Initial seed catalog covering all 9 sections thoroughly
 export const INITIAL_PRODUCTS: Product[] = [
@@ -574,3 +576,97 @@ export function subscribeToWatchlist(userId: string, callback: (items: Investmen
     callback([]);
   });
 }
+
+// ==========================================
+// OWNERSHIP & AUTHENTICITY VERIFICATION
+// ==========================================
+
+export const DEFAULT_VERIFICATION_RECORD: VerificationRecord = {
+  id: 'current_status',
+  status: 'pending_audit',
+  isVerified: false,
+  legalOwnerName: 'Stephen Sirrod',
+  operatingCompanyName: 'Independent Platform Administration & Media',
+  companyRegistrationNumber: 'REG-PENDING-AUDIT-2026',
+  jurisdiction: 'United States & Global Cloud Operations',
+  officialContactEmail: 'sirrodstephen@gmail.com',
+  officialSupportPhone: '+1 (800) 555-0199',
+  registeredAddress: 'Independent Administrative Command, Austin, TX & Global Cloud Network',
+  verificationProvider: 'Independent Third-Party Verification Authority',
+  verificationDate: '2026-11-01',
+  verificationSourceUrl: 'https://ais-pre-jw6kwu57it3to7ymgbrghg-568307259341.europe-west3.run.app',
+  certificateId: 'AUTH-VERIF-DOC-PENDING',
+  documentAuditNotes: 'Authentic legal identity documentation submitted and currently undergoing independent third-party audit. Blue verification badge will illuminate upon final validation.',
+  disclaimer: 'ELON MUSK SPACE is an independent technology catalog, space commerce directory, and market intelligence platform. This platform is NOT owned, operated, authorized, or endorsed by Elon Musk, Tesla, Inc., SpaceX, or their affiliates.',
+  updatedAt: new Date().toISOString(),
+  updatedBy: 'system_init',
+};
+
+// Fetch current verification record or initialize baseline if missing
+export async function getVerificationRecord(): Promise<VerificationRecord> {
+  const docRef = doc(db, 'verification', 'current_status');
+  try {
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as VerificationRecord;
+    } else {
+      // Seed initial unverified state
+      await setDoc(docRef, DEFAULT_VERIFICATION_RECORD);
+      return DEFAULT_VERIFICATION_RECORD;
+    }
+  } catch (error) {
+    console.warn('Could not fetch verification record from Firestore, using default:', error);
+    return DEFAULT_VERIFICATION_RECORD;
+  }
+}
+
+// Real-time listener for verification record
+export function subscribeToVerificationRecord(callback: (record: VerificationRecord) => void) {
+  const docRef = doc(db, 'verification', 'current_status');
+  return onSnapshot(
+    docRef,
+    (snap) => {
+      if (snap.exists()) {
+        callback(snap.data() as VerificationRecord);
+      } else {
+        // Initialize if not present
+        setDoc(docRef, DEFAULT_VERIFICATION_RECORD).catch(() => {});
+        callback(DEFAULT_VERIFICATION_RECORD);
+      }
+    },
+    (err) => {
+      console.warn('Verification record listener issue:', err);
+      callback(DEFAULT_VERIFICATION_RECORD);
+    }
+  );
+}
+
+// Save/update verification record (Admin-only, backed by security rules)
+export async function saveVerificationRecord(
+  record: Partial<VerificationRecord>,
+  adminId: string,
+  adminEmail: string
+): Promise<void> {
+  const docRef = doc(db, 'verification', 'current_status');
+  const now = new Date().toISOString();
+  const updatedData = {
+    ...record,
+    id: 'current_status',
+    updatedAt: now,
+    updatedBy: adminEmail || adminId,
+  };
+
+  try {
+    await setDoc(docRef, updatedData, { merge: true });
+    // Log in admin audit logs
+    await logAdminAction(adminId, adminEmail, 'UPDATE_VERIFICATION', 'Verification', 'current_status', {
+      status: updatedData.status,
+      isVerified: updatedData.isVerified,
+      legalOwnerName: updatedData.legalOwnerName,
+      verificationProvider: updatedData.verificationProvider,
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'verification/current_status');
+  }
+}
+

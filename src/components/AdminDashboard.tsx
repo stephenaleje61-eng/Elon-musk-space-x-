@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   ShieldCheck,
+  ShieldAlert,
+  ArrowLeft,
+  Ban,
   Plus,
   Trash2,
   Edit2,
@@ -13,6 +16,7 @@ import {
   Check,
   X,
   AlertCircle,
+  AlertTriangle,
   UploadCloud,
   Send,
   Eye,
@@ -21,15 +25,35 @@ import {
   Users,
   UserCheck,
   Search,
+  Filter,
+  Building2,
+  ExternalLink,
+  Lock,
+  Scale,
 } from 'lucide-react';
 import { SECTIONS } from '../data/sections';
-import { Product, Article, Conversation, Message, ReportItem, AdminAuditLog, SectionId, UserProfile } from '../types';
+import {
+  Product,
+  Article,
+  Conversation,
+  Message,
+  ReportItem,
+  AdminAuditLog,
+  SectionId,
+  UserProfile,
+  VerificationRecord,
+  VerificationStatus,
+} from '../types';
 import {
   saveProduct,
   deleteProduct,
   saveArticle,
   deleteArticle,
+  subscribeToVerificationRecord,
+  saveVerificationRecord,
+  DEFAULT_VERIFICATION_RECORD,
 } from '../firebase/database';
+import { VerificationBadge } from './VerificationBadge';
 import { uploadImage, compressImageFile } from '../firebase/storage';
 import {
   subscribeToAllConversations,
@@ -67,8 +91,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onBackToStore,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'products' | 'new-product' | 'articles' | 'new-article' | 'inbox' | 'users' | 'reports' | 'audit'
+    'products' | 'new-product' | 'articles' | 'new-article' | 'inbox' | 'users' | 'reports' | 'audit' | 'verification'
   >('products');
+
+  // Ownership & Authenticity Verification State
+  const [verificationRecord, setVerificationRecord] = useState<VerificationRecord>(DEFAULT_VERIFICATION_RECORD);
+  const [vStatus, setVStatus] = useState<VerificationStatus>('pending_audit');
+  const [vIsVerified, setVIsVerified] = useState(false);
+  const [vOwnerName, setVOwnerName] = useState('Stephen Sirrod');
+  const [vCompany, setVCompany] = useState('Independent Platform Administration & Media');
+  const [vRegNumber, setVRegNumber] = useState('REG-PENDING-AUDIT-2026');
+  const [vJurisdiction, setVJurisdiction] = useState('United States & Global Cloud Operations');
+  const [vEmail, setVEmail] = useState(adminEmail || 'sirrodstephen@gmail.com');
+  const [vPhone, setVPhone] = useState('+1 (800) 555-0199');
+  const [vAddress, setVAddress] = useState('Independent Administrative Command, Austin, TX & Global Cloud Network');
+  const [vProvider, setVProvider] = useState('Independent Third-Party Verification Authority');
+  const [vDate, setVDate] = useState('2026-11-01');
+  const [vSourceUrl, setVSourceUrl] = useState('https://ais-pre-jw6kwu57it3to7ymgbrghg-568307259341.europe-west3.run.app');
+  const [vCertId, setVCertId] = useState('AUTH-VERIF-DOC-PENDING');
+  const [vNotes, setVNotes] = useState('Authentic legal identity documentation submitted and currently undergoing independent third-party audit. Blue verification badge will illuminate upon final validation.');
+  const [vDisclaimer, setVDisclaimer] = useState('ELON MUSK SPACE is an independent technology catalog, space commerce directory, and market intelligence platform. This platform is NOT owned, operated, authorized, or endorsed by Elon Musk, Tesla, Inc., SpaceX, or their affiliates.');
+  const [isSavingVerification, setIsSavingVerification] = useState(false);
+  const [verificationSaveNotice, setVerificationSaveNotice] = useState<string | null>(null);
 
   // Product Creator Form State
   const [pTitle, setPTitle] = useState('');
@@ -113,8 +157,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [adminReplyImageName, setAdminReplyImageName] = useState<string | null>(null);
   const [isAdminCompressingImage, setIsAdminCompressingImage] = useState(false);
   const [replySending, setReplySending] = useState(false);
-  const adminChatFileInputRef = useRef<HTMLInputElement>(null);
   const [adminPreviewLightbox, setAdminPreviewLightbox] = useState<string | null>(null);
+  const [inboxSearch, setInboxSearch] = useState('');
+  const [inboxFilter, setInboxFilter] = useState<'all' | 'unread' | 'blocked'>('all');
+  const [mobileChatView, setMobileChatView] = useState(false);
+  const [blockConfirmDialog, setBlockConfirmDialog] = useState<{
+    isOpen: boolean;
+    conversation: Conversation;
+    action: 'block' | 'unblock';
+  } | null>(null);
+  const [blockActionLoading, setBlockActionLoading] = useState(false);
+  const adminChatEndRef = useRef<HTMLDivElement>(null);
+  const adminChatFileInputRef = useRef<HTMLInputElement>(null);
 
   // Reports & Audits
   const [reports, setReports] = useState<ReportItem[]>([]);
@@ -139,14 +193,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const unsubUsers = subscribeToUsers((u) => {
       setUsersList(u);
     });
+    const unsubVerif = subscribeToVerificationRecord((rec) => {
+      setVerificationRecord(rec);
+      setVStatus(rec.status);
+      setVIsVerified(rec.isVerified);
+      setVOwnerName(rec.legalOwnerName || '');
+      setVCompany(rec.operatingCompanyName || '');
+      setVRegNumber(rec.companyRegistrationNumber || '');
+      setVJurisdiction(rec.jurisdiction || '');
+      setVEmail(rec.officialContactEmail || adminEmail);
+      setVPhone(rec.officialSupportPhone || '');
+      setVAddress(rec.registeredAddress || '');
+      setVProvider(rec.verificationProvider || '');
+      setVDate(rec.verificationDate || '');
+      setVSourceUrl(rec.verificationSourceUrl || '');
+      setVCertId(rec.certificateId || '');
+      setVNotes(rec.documentAuditNotes || '');
+      setVDisclaimer(rec.disclaimer || '');
+    });
 
     return () => {
       unsubConversations();
       unsubReports();
       unsubAudit();
       unsubUsers();
+      unsubVerif();
     };
   }, []);
+
+  // Save/Update Ownership Verification Record
+  const handleSaveVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingVerification(true);
+    setVerificationSaveNotice(null);
+
+    try {
+      const recordToSave: Partial<VerificationRecord> = {
+        status: vStatus,
+        isVerified: vStatus === 'verified' && vIsVerified,
+        legalOwnerName: vOwnerName.trim(),
+        operatingCompanyName: vCompany.trim(),
+        companyRegistrationNumber: vRegNumber.trim(),
+        jurisdiction: vJurisdiction.trim(),
+        officialContactEmail: vEmail.trim(),
+        officialSupportPhone: vPhone.trim(),
+        registeredAddress: vAddress.trim(),
+        verificationProvider: vProvider.trim(),
+        verificationDate: vDate.trim(),
+        verificationSourceUrl: vSourceUrl.trim(),
+        certificateId: vCertId.trim(),
+        documentAuditNotes: vNotes.trim(),
+        disclaimer: vDisclaimer.trim(),
+      };
+      await saveVerificationRecord(recordToSave, adminId, adminEmail);
+      setVerificationSaveNotice('Verification record successfully saved to Firestore.');
+      setTimeout(() => setVerificationSaveNotice(null), 4000);
+    } catch (err) {
+      console.error('Failed to update verification record:', err);
+      setVerificationSaveNotice('Failed to update verification record in Firestore.');
+    } finally {
+      setIsSavingVerification(false);
+    }
+  };
 
   // Subscribe to active conversation messages
   useEffect(() => {
@@ -356,12 +464,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // Auto-scroll to latest message in admin chat
+  useEffect(() => {
+    adminChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, activeConversation]);
+
+  // Handle blocking and unblocking visitor with Firestore persistence and audit logging
+  const handleConfirmBlockToggle = async () => {
+    if (!blockConfirmDialog) return;
+    const { conversation, action } = blockConfirmDialog;
+    const shouldBlock = action === 'block';
+    setBlockActionLoading(true);
+    try {
+      await toggleBlockConversation(conversation.id, shouldBlock);
+      await logAdminAction(
+        adminId,
+        adminEmail,
+        shouldBlock ? 'BLOCK_VISITOR' : 'UNBLOCK_VISITOR',
+        'Conversation',
+        conversation.id,
+        { visitorName: conversation.visitorName, visitorId: conversation.visitorId }
+      );
+      // Immediately reflect in active conversation and list
+      setActiveConversation((prev) => (prev && prev.id === conversation.id ? { ...prev, isBlocked: shouldBlock } : prev));
+      setConversations((prev) =>
+        prev.map((c) => (c.id === conversation.id ? { ...c, isBlocked: shouldBlock } : c))
+      );
+      setBlockConfirmDialog(null);
+    } catch (err) {
+      console.error('Failed to update visitor block status:', err);
+    } finally {
+      setBlockActionLoading(false);
+    }
+  };
+
   // Handle role toggle (promote to admin or demote to user)
   const handleToggleUserRole = async (targetUser: UserProfile) => {
     const newRole = targetUser.role === 'admin' ? 'user' : 'admin';
-    const actionDesc = newRole === 'admin' ? 'Promote to Administrator' : 'Demote to Standard User';
-    if (!window.confirm(`Are you sure you want to ${actionDesc.toLowerCase()} for "${targetUser.displayName || targetUser.email || targetUser.id}"?`)) return;
-
     setUserActionLoading(targetUser.id);
     try {
       await updateUserRole(targetUser.id, newRole);
@@ -372,7 +511,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
     } catch (err) {
       console.error('Failed to update user role:', err);
-      alert('Failed to update user role in Firestore.');
     } finally {
       setUserActionLoading(null);
     }
@@ -380,7 +518,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Handle delete user profile
   const handleDeleteUser = async (targetUser: UserProfile) => {
-    if (!window.confirm(`Permanently remove user record "${targetUser.displayName || targetUser.id}" from Firestore?`)) return;
     setUserActionLoading(targetUser.id);
     try {
       await deleteUserDoc(targetUser.id);
@@ -389,7 +526,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
     } catch (err) {
       console.error('Failed to delete user:', err);
-      alert('Failed to delete user from Firestore.');
     } finally {
       setUserActionLoading(null);
     }
@@ -434,7 +570,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </header>
 
       {/* Main Admin Content */}
-      <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col lg:flex-row gap-6">
+      <div className={`flex-1 w-full mx-auto p-3 sm:p-6 lg:p-8 flex flex-col lg:flex-row gap-6 ${activeTab === 'inbox' ? 'max-w-[1600px]' : 'max-w-7xl'}`}>
         {/* Left Sidebar Menu */}
         <aside className="w-full lg:w-64 bg-white rounded-xl border border-zinc-200 p-4 shrink-0 shadow-xs h-fit space-y-1">
           <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 px-3 py-2">
@@ -500,8 +636,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <MessageSquare className="w-4 h-4 text-blue-500" />
               <span>Visitor Conversations</span>
             </span>
-            {conversations.some((c) => c.unreadAdminCount > 0) && (
-              <span className="w-2 h-2 rounded-full bg-blue-600" />
+            {conversations.filter((c) => (c.unreadAdminCount ?? 0) > 0).length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-600 text-white">
+                {conversations.filter((c) => (c.unreadAdminCount ?? 0) > 0).length}
+              </span>
             )}
           </button>
 
@@ -543,10 +681,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </span>
             <span className="font-mono text-[11px] tabular-nums opacity-70">{auditLogs.length}</span>
           </button>
+
+          <div className="pt-4 text-[11px] font-bold uppercase tracking-wider text-zinc-400 px-3 py-2">
+            Governance & Identity
+          </div>
+
+          <button
+            onClick={() => setActiveTab('verification')}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              activeTab === 'verification' ? 'bg-blue-600 text-white shadow-xs' : 'text-zinc-700 hover:bg-zinc-100'
+            }`}
+          >
+            <span className="flex items-center gap-2.5">
+              <ShieldCheck className={`w-4 h-4 ${activeTab === 'verification' ? 'text-white' : 'text-blue-600'}`} />
+              <span>Ownership & Verification</span>
+            </span>
+            <VerificationBadge record={verificationRecord} size="sm" showDetailsTooltip={false} />
+          </button>
         </aside>
 
         {/* Right Tab Content View */}
-        <main className="flex-1 bg-white rounded-xl border border-zinc-200 p-6 shadow-xs overflow-hidden">
+        <main className={`flex-1 overflow-hidden ${activeTab === 'inbox' ? 'bg-transparent border-0 p-0 shadow-none' : 'bg-white rounded-xl border border-zinc-200 p-6 shadow-xs'}`}>
           {/* TAB 1: ALL PRODUCTS */}
           {activeTab === 'products' && (
             <div>
@@ -1016,215 +1171,520 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
-          {/* TAB 5: VISITOR INBOX & REPLIES */}
-          {activeTab === 'inbox' && (
-            <div className="h-[600px] flex flex-col md:flex-row gap-4">
-              {/* Left Conversation List */}
-              <div className="w-full md:w-72 border border-zinc-200 rounded-xl overflow-y-auto divide-y divide-zinc-100 shrink-0">
-                <div className="p-3 bg-zinc-50 border-b border-zinc-200 text-xs font-bold text-zinc-700 uppercase tracking-wider">
-                  Visitor Inquiries ({conversations.length})
-                </div>
+          {/* TAB 5: VISITOR INBOX & REPLIES (SPACIOUS, RESPONSIVE & PROFESSIONAL) */}
+          {activeTab === 'inbox' && (() => {
+            const filteredConvs = conversations.filter((c) => {
+              if (inboxFilter === 'unread' && (c.unreadAdminCount ?? 0) === 0) return false;
+              if (inboxFilter === 'blocked' && !c.isBlocked) return false;
+              if (!inboxSearch.trim()) return true;
+              const term = inboxSearch.toLowerCase();
+              return (
+                (c.visitorName && c.visitorName.toLowerCase().includes(term)) ||
+                (c.visitorId && c.visitorId.toLowerCase().includes(term)) ||
+                (c.lastMessageText && c.lastMessageText.toLowerCase().includes(term))
+              );
+            });
+            const unreadCount = conversations.filter((c) => (c.unreadAdminCount ?? 0) > 0).length;
+            const blockedCount = conversations.filter((c) => c.isBlocked).length;
 
-                {conversations.map((c) => {
-                  const isSelected = activeConversation?.id === c.id;
-                  return (
-                    <div
-                      key={c.id}
-                      onClick={() => setActiveConversation(c)}
-                      className={`p-3.5 cursor-pointer transition-colors ${
-                        isSelected ? 'bg-blue-50/70 border-l-4 border-l-blue-600' : 'hover:bg-zinc-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-xs text-zinc-900 truncate">
-                          {c.visitorName || 'Visitor'}
-                        </span>
-                        {c.unreadAdminCount > 0 && (
-                          <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
-                        )}
-                      </div>
-                      <p className="text-[11px] text-zinc-500 truncate mb-1">
-                        {c.lastMessageText || 'Started conversation'}
-                      </p>
-                      <span className="text-[10px] text-zinc-400 font-mono">
-                        {new Date(c.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                  );
-                })}
-
-                {conversations.length === 0 && (
-                  <div className="p-6 text-center text-xs text-zinc-400">
-                    No visitor conversations yet.
-                  </div>
-                )}
-              </div>
-
-              {/* Right Active Message Thread & Reply Box */}
-              <div className="flex-1 border border-zinc-200 rounded-xl flex flex-col overflow-hidden bg-zinc-50">
-                {activeConversation ? (
-                  <>
-                    <div className="p-3.5 bg-white border-b border-zinc-200 flex items-center justify-between">
+            return (
+              <div className="h-[calc(100vh-175px)] min-h-[680px] sm:min-h-[750px] bg-white border border-zinc-200 rounded-2xl flex flex-col md:flex-row overflow-hidden shadow-sm">
+                {/* Left Conversation List (Full width on mobile when !mobileChatView, fixed width on md+) */}
+                <div
+                  className={`w-full md:w-80 lg:w-[380px] border-r border-zinc-200 flex flex-col shrink-0 bg-zinc-50/70 overflow-hidden ${
+                    mobileChatView ? 'hidden md:flex' : 'flex'
+                  }`}
+                >
+                  {/* Header & Search */}
+                  <div className="p-4 border-b border-zinc-200 bg-white space-y-3 shrink-0">
+                    <div className="flex items-center justify-between">
                       <div>
-                        <div className="text-xs font-bold text-zinc-900">
-                          {activeConversation.visitorName}
-                        </div>
-                        <div className="text-[10px] text-zinc-500 font-mono">
-                          ID: {activeConversation.visitorId}
-                        </div>
+                        <h3 className="text-sm font-extrabold text-zinc-950 flex items-center gap-2">
+                          <MessageSquare className="w-4 h-4 text-blue-600" />
+                          <span>Visitor Inquiries</span>
+                        </h3>
+                        <p className="text-[11px] text-zinc-500 font-mono">
+                          {conversations.length} total visitor threads
+                        </p>
                       </div>
+                      {unreadCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-600 text-white animate-pulse">
+                          {unreadCount} unread
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Search Input */}
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Search visitor name, ID, or text..."
+                        value={inboxSearch}
+                        onChange={(e) => setInboxSearch(e.target.value)}
+                        className="w-full pl-8 pr-7 py-2 text-xs bg-zinc-100 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition-all placeholder:text-zinc-400"
+                      />
+                      {inboxSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setInboxSearch('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Filter Tabs */}
+                    <div className="flex bg-zinc-100 p-1 rounded-lg gap-1 text-[11px] font-semibold text-zinc-600">
                       <button
-                        onClick={() =>
-                          toggleBlockConversation(activeConversation.id, !activeConversation.isBlocked)
-                        }
-                        className={`text-xs px-2.5 py-1 rounded font-semibold cursor-pointer ${
-                          activeConversation.isBlocked
-                            ? 'bg-rose-100 text-rose-700'
-                            : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                        type="button"
+                        onClick={() => setInboxFilter('all')}
+                        className={`flex-1 py-1 rounded-md transition-colors cursor-pointer text-center ${
+                          inboxFilter === 'all'
+                            ? 'bg-white text-zinc-950 font-bold shadow-xs'
+                            : 'hover:text-zinc-900'
                         }`}
                       >
-                        {activeConversation.isBlocked ? 'Unblock' : 'Block Visitor'}
+                        All ({conversations.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInboxFilter('unread')}
+                        className={`flex-1 py-1 rounded-md transition-colors cursor-pointer text-center ${
+                          inboxFilter === 'unread'
+                            ? 'bg-white text-blue-600 font-bold shadow-xs'
+                            : 'hover:text-zinc-900'
+                        }`}
+                      >
+                        Unread ({unreadCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInboxFilter('blocked')}
+                        className={`flex-1 py-1 rounded-md transition-colors cursor-pointer text-center ${
+                          inboxFilter === 'blocked'
+                            ? 'bg-white text-rose-600 font-bold shadow-xs'
+                            : 'hover:text-zinc-900'
+                        }`}
+                      >
+                        Blocked ({blockedCount})
                       </button>
                     </div>
+                  </div>
 
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                      {chatMessages.map((m) => {
-                        const isAdminMsg = m.from === 'admin';
+                  {/* Conversation List */}
+                  <div className="flex-1 overflow-y-auto divide-y divide-zinc-200/70 p-2 space-y-1.5">
+                    {filteredConvs.length === 0 ? (
+                      <div className="py-16 text-center text-xs text-zinc-400 font-mono px-4">
+                        {inboxSearch.trim() || inboxFilter !== 'all'
+                          ? 'No inquiries match this search or filter.'
+                          : 'No visitor conversations yet.'}
+                      </div>
+                    ) : (
+                      filteredConvs.map((c) => {
+                        const isSelected = activeConversation?.id === c.id;
+                        const hasUnread = (c.unreadAdminCount ?? 0) > 0;
                         return (
                           <div
-                            key={m.id}
-                            className={`flex flex-col ${isAdminMsg ? 'items-end' : 'items-start'}`}
+                            key={c.id}
+                            onClick={() => {
+                              setActiveConversation(c);
+                              setMobileChatView(true);
+                            }}
+                            className={`p-3.5 rounded-xl cursor-pointer transition-all border ${
+                              isSelected
+                                ? 'bg-blue-50/90 border-blue-300 shadow-xs'
+                                : 'bg-white hover:bg-zinc-100/90 border-transparent'
+                            }`}
                           >
-                            <span className="text-[10px] text-zinc-400 mb-0.5">
-                              {isAdminMsg ? 'Platform Admin (You)' : activeConversation.visitorName}
-                            </span>
-                            <div
-                              className={`max-w-[80%] rounded-xl px-3.5 py-2 text-xs ${
-                                isAdminMsg
-                                  ? 'bg-zinc-950 text-white'
-                                  : 'bg-white border border-zinc-200 text-zinc-900'
-                              }`}
-                            >
-                              {m.imageUrl && (
-                                <div
-                                  onClick={() => setAdminPreviewLightbox(m.imageUrl || null)}
-                                  className="mb-2 overflow-hidden rounded-lg border border-zinc-700/40 cursor-pointer group relative max-w-xs"
-                                >
-                                  <img
-                                    src={m.imageUrl}
-                                    alt="Attachment"
-                                    className="max-h-60 rounded object-cover w-full group-hover:opacity-95"
-                                  />
-                                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-mono">
-                                    Click to enlarge
-                                  </div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2 truncate">
+                                <div className="w-7 h-7 rounded-full bg-zinc-900 text-white font-bold text-[11px] flex items-center justify-center shrink-0">
+                                  {(c.visitorName || 'V').slice(0, 1).toUpperCase()}
                                 </div>
-                              )}
-                              {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+                                <span className="font-bold text-xs text-zinc-950 truncate">
+                                  {c.visitorName || 'Visitor'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {c.isBlocked && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-rose-100 text-rose-700 border border-rose-300 uppercase">
+                                    Blocked
+                                  </span>
+                                )}
+                                {hasUnread && (
+                                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-600 text-white shrink-0">
+                                    {c.unreadAdminCount}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <p className="text-xs text-zinc-600 truncate mb-1">
+                              {c.lastMessageText || 'Started conversation'}
+                            </p>
+
+                            <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono">
+                              <span>{new Date(c.updatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                              <span>{new Date(c.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
                           </div>
                         );
-                      })}
-                    </div>
+                      })
+                    )}
+                  </div>
+                </div>
 
-                    {/* Image Attachment Preview for Admin */}
-                    {adminReplyImage && (
-                      <div className="px-4 py-2 bg-zinc-50 border-t border-zinc-200 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <img
-                            src={adminReplyImage}
-                            alt="Preview"
-                            className="w-10 h-10 object-cover rounded border border-zinc-300"
-                          />
-                          <span className="text-xs text-zinc-700 truncate max-w-xs">
-                            {adminReplyImageName || 'Image attached'}
-                          </span>
+                {/* Right Active Message Thread & Chat Window (Full width on mobile when mobileChatView) */}
+                <div
+                  className={`flex-1 flex flex-col overflow-hidden bg-white ${
+                    !mobileChatView ? 'hidden md:flex' : 'flex'
+                  }`}
+                >
+                  {activeConversation ? (
+                    <>
+                      {/* Chat Header Bar */}
+                      <div className="p-3.5 sm:p-4 bg-white border-b border-zinc-200 flex items-center justify-between shrink-0 shadow-xs">
+                        <div className="flex items-center gap-3">
+                          {/* Mobile Back Button */}
+                          <button
+                            type="button"
+                            onClick={() => setMobileChatView(false)}
+                            className="md:hidden p-1.5 -ml-1 text-zinc-600 hover:text-zinc-950 rounded-lg hover:bg-zinc-100 cursor-pointer"
+                            aria-label="Back to conversations list"
+                          >
+                            <ArrowLeft className="w-5 h-5" />
+                          </button>
+
+                          <div className="w-9 h-9 rounded-full bg-blue-600 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                            {(activeConversation.visitorName || 'V').slice(0, 1).toUpperCase()}
+                          </div>
+
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-extrabold text-zinc-950">
+                                {activeConversation.visitorName || 'Visitor'}
+                              </span>
+                              {activeConversation.isBlocked ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-300">
+                                  <ShieldAlert className="w-3 h-3 text-rose-600" />
+                                  BLOCKED
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                  ACTIVE VISITOR
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-zinc-400 font-mono">
+                              Visitor ID: {activeConversation.visitorId}
+                            </div>
+                          </div>
                         </div>
+
+                        {/* Block / Unblock Action Button */}
+                        <div>
+                          {activeConversation.isBlocked ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setBlockConfirmDialog({
+                                  isOpen: true,
+                                  conversation: activeConversation,
+                                  action: 'unblock',
+                                })
+                              }
+                              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              <span>Unblock Visitor</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setBlockConfirmDialog({
+                                  isOpen: true,
+                                  conversation: activeConversation,
+                                  action: 'block',
+                                })
+                              }
+                              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                            >
+                              <ShieldAlert className="w-3.5 h-3.5" />
+                              <span>Block Visitor</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Messages Area (Occupies Full Available Height & Smooth Scroll) */}
+                      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-zinc-50/50">
+                        {chatMessages.length === 0 ? (
+                          <div className="py-24 text-center text-xs text-zinc-400 font-mono">
+                            No messages yet in this visitor conversation.
+                          </div>
+                        ) : (
+                          chatMessages.map((m) => {
+                            const isAdminMsg = m.from === 'admin';
+                            const formattedTime = new Date(m.time).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            });
+
+                            return (
+                              <div
+                                key={m.id}
+                                className={`flex flex-col ${isAdminMsg ? 'items-end' : 'items-start'}`}
+                              >
+                                <div className="text-[10px] text-zinc-400 mb-1 px-1 font-mono flex items-center gap-1.5">
+                                  <span>{isAdminMsg ? 'Platform Administrator (You)' : activeConversation.visitorName}</span>
+                                  <span>·</span>
+                                  <span>{formattedTime}</span>
+                                </div>
+
+                                <div
+                                  className={`max-w-[85%] sm:max-w-[70%] rounded-2xl p-3.5 text-xs sm:text-sm leading-relaxed shadow-xs ${
+                                    isAdminMsg
+                                      ? 'bg-zinc-950 text-white rounded-tr-none'
+                                      : 'bg-white border border-zinc-200/90 text-zinc-900 rounded-tl-none'
+                                  }`}
+                                >
+                                  {m.imageUrl && (
+                                    <div
+                                      onClick={() => setAdminPreviewLightbox(m.imageUrl || null)}
+                                      className="mb-2.5 overflow-hidden rounded-xl border border-zinc-700/30 cursor-pointer group relative max-w-sm"
+                                    >
+                                      <img
+                                        src={m.imageUrl}
+                                        alt="Attachment"
+                                        className="max-h-72 w-auto max-w-full rounded-xl object-contain bg-black/10 group-hover:opacity-95 transition-opacity"
+                                      />
+                                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[11px] font-mono transition-opacity">
+                                        Click to enlarge
+                                      </div>
+                                    </div>
+                                  )}
+                                  {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                        <div ref={adminChatEndRef} />
+                      </div>
+
+                      {/* Blocked Status Banner if visitor is blocked */}
+                      {activeConversation.isBlocked && (
+                        <div className="px-4 py-2.5 bg-rose-50 border-t border-rose-200 text-rose-800 text-xs flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                            <span>
+                              <strong>Visitor is marked as BLOCKED.</strong> They cannot send new messages. All existing messages remain permanently preserved.
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setBlockConfirmDialog({
+                                isOpen: true,
+                                conversation: activeConversation,
+                                action: 'unblock',
+                              })
+                            }
+                            className="underline font-bold text-rose-900 cursor-pointer text-xs shrink-0 ml-2"
+                          >
+                            Unblock Now
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Attached Image Preview for Admin */}
+                      {adminReplyImage && (
+                        <div className="px-4 py-2.5 bg-zinc-100 border-t border-zinc-200 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={adminReplyImage}
+                              alt="Preview"
+                              className="w-12 h-12 object-cover rounded-lg border border-zinc-300 shadow-xs"
+                            />
+                            <div className="text-xs">
+                              <div className="font-semibold text-zinc-900 truncate max-w-xs">
+                                {adminReplyImageName || 'Image attached'}
+                              </div>
+                              <div className="text-[10px] text-zinc-500 font-mono">
+                                Ready to send with reply
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAdminReplyImage(null);
+                              setAdminReplyImageName(null);
+                            }}
+                            className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-lg hover:bg-zinc-200 cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Reply Input Bar (Permanently Visible at Bottom) */}
+                      <div className="p-3 sm:p-4 bg-white border-t border-zinc-200 flex items-center gap-2.5 shrink-0 shadow-xs">
+                        <input
+                          type="file"
+                          ref={adminChatFileInputRef}
+                          onChange={handleAdminImageSelect}
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          className="hidden"
+                        />
                         <button
                           type="button"
-                          onClick={() => {
-                            setAdminReplyImage(null);
-                            setAdminReplyImageName(null);
-                          }}
-                          className="p-1 text-zinc-400 hover:text-zinc-700"
+                          onClick={() => adminChatFileInputRef.current?.click()}
+                          disabled={isAdminCompressingImage || replySending}
+                          className={`p-3 border rounded-xl transition-colors cursor-pointer shrink-0 ${
+                            adminReplyImage
+                              ? 'bg-blue-50 border-blue-400 text-blue-600'
+                              : 'border-zinc-300 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
+                          }`}
+                          title="Attach image"
                         >
-                          <X className="w-4 h-4" />
+                          <ImageIcon className="w-4 h-4" />
+                        </button>
+
+                        <input
+                          type="text"
+                          value={adminReplyText}
+                          onChange={(e) => setAdminReplyText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendAdminReply();
+                            }
+                          }}
+                          placeholder={`Reply directly to ${activeConversation.visitorName}...`}
+                          className="flex-1 px-4 py-3 text-xs sm:text-sm border border-zinc-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSendAdminReply}
+                          disabled={(!adminReplyText.trim() && !adminReplyImage) || replySending || isAdminCompressingImage}
+                          className="px-6 py-3 bg-zinc-950 hover:bg-zinc-800 text-white rounded-xl text-xs sm:text-sm font-extrabold disabled:opacity-40 transition-all cursor-pointer flex items-center gap-2 shrink-0 shadow-xs"
+                        >
+                          <Send className="w-4 h-4" />
+                          <span>SEND</span>
                         </button>
                       </div>
-                    )}
 
-                    <div className="p-3 bg-white border-t border-zinc-200 flex items-center gap-2">
-                      <input
-                        type="file"
-                        ref={adminChatFileInputRef}
-                        onChange={handleAdminImageSelect}
-                        accept="image/png,image/jpeg,image/webp,image/gif"
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => adminChatFileInputRef.current?.click()}
-                        disabled={isAdminCompressingImage || replySending}
-                        className={`p-2 border rounded-lg transition-colors cursor-pointer ${
-                          adminReplyImage
-                            ? 'bg-blue-50 border-blue-400 text-blue-600'
-                            : 'border-zinc-300 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50'
-                        }`}
-                        title="Attach image"
-                      >
-                        <ImageIcon className="w-4 h-4" />
-                      </button>
-
-                      <input
-                        type="text"
-                        value={adminReplyText}
-                        onChange={(e) => setAdminReplyText(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendAdminReply();
-                          }
-                        }}
-                        placeholder="Reply directly to visitor as administrator..."
-                        className="flex-1 px-3 py-2 text-xs border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      />
-                      <button
-                        onClick={handleSendAdminReply}
-                        disabled={(!adminReplyText.trim() && !adminReplyImage) || replySending || isAdminCompressingImage}
-                        className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50 cursor-pointer"
-                      >
-                        <Send className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    {/* Admin Image Lightbox */}
-                    {adminPreviewLightbox && (
-                      <div
-                        onClick={() => setAdminPreviewLightbox(null)}
-                        className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-                      >
-                        <div className="relative max-w-4xl max-h-[85vh]">
-                          <button
-                            onClick={() => setAdminPreviewLightbox(null)}
-                            className="absolute -top-10 right-0 text-white hover:text-zinc-300 p-1 cursor-pointer"
-                          >
-                            <X className="w-6 h-6" />
-                          </button>
-                          <img
-                            src={adminPreviewLightbox}
-                            alt="Full size attachment"
-                            className="max-h-[80vh] max-w-full rounded-xl object-contain shadow-2xl"
-                            onClick={(e) => e.stopPropagation()}
-                          />
+                      {/* Admin Image Lightbox */}
+                      {adminPreviewLightbox && (
+                        <div
+                          onClick={() => setAdminPreviewLightbox(null)}
+                          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xs flex items-center justify-center p-4"
+                        >
+                          <div className="relative max-w-4xl max-h-[85vh] flex flex-col items-center">
+                            <button
+                              onClick={() => setAdminPreviewLightbox(null)}
+                              className="absolute -top-10 right-0 text-white hover:text-zinc-300 p-1 cursor-pointer"
+                            >
+                              <X className="w-6 h-6" />
+                            </button>
+                            <img
+                              src={adminPreviewLightbox}
+                              alt="Full size attachment"
+                              className="max-h-[80vh] max-w-full rounded-xl object-contain shadow-2xl"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
                         </div>
-                      </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 p-8 text-center">
+                      <MessageSquare className="w-12 h-12 text-zinc-300 mb-3" />
+                      <h4 className="text-sm font-bold text-zinc-700 mb-1">Select a Visitor Conversation</h4>
+                      <p className="text-xs max-w-sm text-zinc-400">
+                        Choose an inquiry from the list on the left to read messages, view media, send replies, or manage visitor access.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Block / Unblock Confirmation Modal Dialog */}
+          {blockConfirmDialog && blockConfirmDialog.isOpen && (
+            <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl border border-zinc-200">
+                <div className="flex items-center gap-3 mb-4">
+                  <div
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                      blockConfirmDialog.action === 'block'
+                        ? 'bg-rose-100 text-rose-600'
+                        : 'bg-emerald-100 text-emerald-600'
+                    }`}
+                  >
+                    {blockConfirmDialog.action === 'block' ? (
+                      <AlertTriangle className="w-5 h-5" />
+                    ) : (
+                      <ShieldCheck className="w-5 h-5" />
                     )}
-                  </>
-                ) : (
-                  <div className="flex-1 flex items-center justify-center text-xs text-zinc-400">
-                    Select a conversation on the left to read and respond.
                   </div>
-                )}
+                  <div>
+                    <h3 className="text-base font-extrabold text-zinc-950">
+                      {blockConfirmDialog.action === 'block'
+                        ? `Block "${blockConfirmDialog.conversation.visitorName}"?`
+                        : `Unblock "${blockConfirmDialog.conversation.visitorName}"?`}
+                    </h3>
+                    <p className="text-xs text-zinc-500 font-mono">
+                      UID: {blockConfirmDialog.conversation.visitorId}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-zinc-600 leading-relaxed mb-6">
+                  {blockConfirmDialog.action === 'block' ? (
+                    <>
+                      Are you sure you want to <strong>block this visitor</strong>? Once confirmed, this visitor will be permanently marked as blocked in Firestore and <strong>forbidden from sending new messages</strong>. All existing conversation history and media remain permanently preserved.
+                    </>
+                  ) : (
+                    <>
+                      Are you sure you want to <strong>unblock this visitor</strong>? This will restore their authorization to send messages on their private line.
+                    </>
+                  )}
+                </p>
+
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setBlockConfirmDialog(null)}
+                    disabled={blockActionLoading}
+                    className="px-4 py-2 text-xs font-semibold text-zinc-600 hover:text-zinc-900 rounded-lg hover:bg-zinc-100 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmBlockToggle}
+                    disabled={blockActionLoading}
+                    className={`px-5 py-2 text-xs font-bold text-white rounded-lg transition-colors cursor-pointer shadow-xs ${
+                      blockConfirmDialog.action === 'block'
+                        ? 'bg-rose-600 hover:bg-rose-700'
+                        : 'bg-emerald-600 hover:bg-emerald-700'
+                    }`}
+                  >
+                    {blockActionLoading
+                      ? 'Updating...'
+                      : blockConfirmDialog.action === 'block'
+                      ? 'Confirm Block'
+                      : 'Confirm Unblock'}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1506,6 +1966,401 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 8: OWNERSHIP & AUTHENTICITY VERIFICATION */}
+          {activeTab === 'verification' && (
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-zinc-200 mb-6 gap-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-1 text-xs font-mono font-bold text-blue-600 uppercase tracking-wider">
+                    <ShieldCheck className="w-4 h-4 text-blue-600" />
+                    <span>Official Governance & Compliance</span>
+                  </div>
+                  <h2 className="text-xl font-bold text-zinc-950">
+                    Ownership & Authenticity Verification Manager
+                  </h2>
+                  <p className="text-xs text-zinc-500">
+                    Maintain verified legal ownership documentation, company registration records, and third-party audit credentials.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <VerificationBadge record={verificationRecord} size="md" />
+                </div>
+              </div>
+
+              {/* Strict Integrity Warning Banner */}
+              <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-950 mb-6 flex items-start gap-3">
+                <Scale className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <strong className="block font-bold">Mandatory Authenticity & Non-Affiliation Directive</strong>
+                  <p className="text-blue-900 leading-relaxed">
+                    The blue verification badge must only appear when authentic ownership documentation has been verified by an authorized independent verification registry. 
+                    Never invent endorsements, partnerships, ownership claims or authorization. 
+                    The website must always clearly disclose that it is an independent catalog and not operated or endorsed by Elon Musk.
+                  </p>
+                </div>
+              </div>
+
+              {verificationSaveNotice && (
+                <div className="mb-6 p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-medium flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>{verificationSaveNotice}</span>
+                </div>
+              )}
+
+              {/* Form & Live Preview Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* Form Inputs (2 Cols) */}
+                <form onSubmit={handleSaveVerification} className="lg:col-span-2 space-y-6">
+                  
+                  {/* Status & Verification Toggle */}
+                  <div className="p-5 bg-zinc-50 rounded-xl border border-zinc-200 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase text-zinc-700 font-mono">
+                        Verification Audit Status
+                      </label>
+                      <span className="text-[11px] font-mono text-zinc-500">Controls Blue Badge Visibility</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <select
+                          value={vStatus}
+                          onChange={(e) => {
+                            const val = e.target.value as VerificationStatus;
+                            setVStatus(val);
+                            if (val === 'verified') {
+                              setVIsVerified(true);
+                            } else {
+                              setVIsVerified(false);
+                            }
+                          }}
+                          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs font-semibold text-zinc-900 focus:outline-none focus:border-blue-600"
+                        >
+                          <option value="pending_audit">Pending Independent Audit (Badge In Review)</option>
+                          <option value="verified">Verified by Authorized Provider (Blue Badge Active)</option>
+                          <option value="unverified">Unverified / Awaiting Documentation (No Badge)</option>
+                          <option value="rejected">Documentation Rejected / Revision Required</option>
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-zinc-300">
+                        <input
+                          type="checkbox"
+                          id="isVerifiedToggle"
+                          checked={vIsVerified}
+                          onChange={(e) => {
+                            setVIsVerified(e.target.checked);
+                            if (e.target.checked) setVStatus('verified');
+                            else if (vStatus === 'verified') setVStatus('pending_audit');
+                          }}
+                          className="w-4 h-4 text-blue-600 rounded border-zinc-300"
+                        />
+                        <label htmlFor="isVerifiedToggle" className="text-xs font-bold text-zinc-900 cursor-pointer">
+                          Activate Blue Verification Badge
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 1: Legal Ownership & Operating Company */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-zinc-900 flex items-center gap-2 pb-2 border-b border-zinc-200">
+                      <Building2 className="w-4 h-4 text-blue-600" />
+                      <span>Legal Identity & Operating Entity</span>
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Verified Legal Owner Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={vOwnerName}
+                          onChange={(e) => setVOwnerName(e.target.value)}
+                          placeholder="e.g. Stephen Sirrod"
+                          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs text-zinc-900 focus:outline-none focus:border-blue-600"
+                        />
+                        <p className="text-[10px] text-zinc-400 mt-1">
+                          Publicly displayed only when verified by authentic documentation.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Operating Company Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={vCompany}
+                          onChange={(e) => setVCompany(e.target.value)}
+                          placeholder="e.g. Independent Platform Administration & Media"
+                          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs text-zinc-900 focus:outline-none focus:border-blue-600"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Company Registration / Filing ID
+                        </label>
+                        <input
+                          type="text"
+                          value={vRegNumber}
+                          onChange={(e) => setVRegNumber(e.target.value)}
+                          placeholder="e.g. REG-TX-2026-90412"
+                          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs font-mono text-zinc-900 focus:outline-none focus:border-blue-600"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Jurisdiction of Operation
+                        </label>
+                        <input
+                          type="text"
+                          value={vJurisdiction}
+                          onChange={(e) => setVJurisdiction(e.target.value)}
+                          placeholder="e.g. United States & Global Cloud Operations"
+                          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs text-zinc-900 focus:outline-none focus:border-blue-600"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 2: Official Contact Information */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-zinc-900 flex items-center gap-2 pb-2 border-b border-zinc-200">
+                      <span>Official Contact Information</span>
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Official Contact Email *
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={vEmail}
+                          onChange={(e) => setVEmail(e.target.value)}
+                          placeholder="e.g. sirrodstephen@gmail.com"
+                          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs font-mono text-zinc-900 focus:outline-none focus:border-blue-600"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Support Hotline (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={vPhone}
+                          onChange={(e) => setVPhone(e.target.value)}
+                          placeholder="e.g. +1 (800) 555-0199"
+                          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs font-mono text-zinc-900 focus:outline-none focus:border-blue-600"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                        Registered Business Address
+                      </label>
+                      <input
+                        type="text"
+                        value={vAddress}
+                        onChange={(e) => setVAddress(e.target.value)}
+                        placeholder="e.g. Independent Administrative Command, Austin, TX & Global Cloud Network"
+                        className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs text-zinc-900 focus:outline-none focus:border-blue-600"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Section 3: Third-Party Verification Provider Details */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-zinc-900 flex items-center gap-2 pb-2 border-b border-zinc-200">
+                      <ShieldCheck className="w-4 h-4 text-blue-600" />
+                      <span>Legitimate Authorized Verification Provider Credentials</span>
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Verification Provider Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={vProvider}
+                          onChange={(e) => setVProvider(e.target.value)}
+                          placeholder="e.g. Independent Third-Party Verification Authority"
+                          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs text-zinc-900 focus:outline-none focus:border-blue-600"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Verification Date
+                        </label>
+                        <input
+                          type="date"
+                          value={vDate}
+                          onChange={(e) => setVDate(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs font-mono text-zinc-900 focus:outline-none focus:border-blue-600"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Public Verification Source URL
+                        </label>
+                        <input
+                          type="url"
+                          value={vSourceUrl}
+                          onChange={(e) => setVSourceUrl(e.target.value)}
+                          placeholder="https://registry.example.org/audit/12345"
+                          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs font-mono text-zinc-900 focus:outline-none focus:border-blue-600"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                          Certificate Reference / Audit ID
+                        </label>
+                        <input
+                          type="text"
+                          value={vCertId}
+                          onChange={(e) => setVCertId(e.target.value)}
+                          placeholder="e.g. AUTH-VERIF-2026-CERT"
+                          className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs font-mono text-zinc-900 focus:outline-none focus:border-blue-600"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                        Documentation Audit Notes
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={vNotes}
+                        onChange={(e) => setVNotes(e.target.value)}
+                        placeholder="Notes regarding submitted corporate identity and technical documentation review..."
+                        className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs text-zinc-900 focus:outline-none focus:border-blue-600"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Section 4: Non-Affiliation Disclaimer */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold text-zinc-700">
+                      Independent Platform Disclaimer Text
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={vDisclaimer}
+                      onChange={(e) => setVDisclaimer(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs text-zinc-700 focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+
+                  {/* Form Submission */}
+                  <div className="pt-4 border-t border-zinc-200 flex items-center justify-between">
+                    <div className="text-xs text-zinc-500 font-mono flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Security rule enforced (Admin UID only)</span>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSavingVerification}
+                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingVerification ? 'Saving to Firestore...' : 'Save Verification Record'}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Live Public Preview Card (1 Col) */}
+                <div className="space-y-4">
+                  <div className="text-xs font-bold uppercase tracking-wider text-zinc-500 font-mono">
+                    Live Public Preview
+                  </div>
+
+                  <div className="p-5 bg-zinc-950 text-white rounded-2xl border border-zinc-800 space-y-4 shadow-md">
+                    <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+                      <span className="text-xs font-bold text-zinc-200 font-mono">Public Status Preview</span>
+                      <VerificationBadge
+                        record={{
+                          id: 'preview',
+                          status: vStatus,
+                          isVerified: vStatus === 'verified' && vIsVerified,
+                          legalOwnerName: vOwnerName,
+                          operatingCompanyName: vCompany,
+                          officialContactEmail: vEmail,
+                          verificationProvider: vProvider,
+                          verificationDate: vDate,
+                          verificationSourceUrl: vSourceUrl,
+                          certificateId: vCertId,
+                          disclaimer: vDisclaimer,
+                          updatedAt: new Date().toISOString(),
+                          updatedBy: adminEmail,
+                        }}
+                        size="md"
+                      />
+                    </div>
+
+                    <div className="space-y-2 text-xs">
+                      <div>
+                        <span className="text-zinc-500 text-[10px] font-mono block">VERIFIED OWNER</span>
+                        <span className="font-bold text-white text-sm">
+                          {vStatus === 'verified' && vIsVerified
+                            ? vOwnerName || 'Verified Legal Owner'
+                            : 'Submitted · Validation Pending'}
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-zinc-500 text-[10px] font-mono block">OPERATING ENTITY</span>
+                        <span className="text-zinc-300">{vCompany || 'Operating Entity'}</span>
+                      </div>
+
+                      <div>
+                        <span className="text-zinc-500 text-[10px] font-mono block">REGISTRATION NO.</span>
+                        <span className="text-zinc-300 font-mono">{vRegNumber || 'REG-PENDING'}</span>
+                      </div>
+
+                      <div>
+                        <span className="text-zinc-500 text-[10px] font-mono block">AUDIT PROVIDER</span>
+                        <span className="text-zinc-300">{vProvider || 'Authorized Registry'}</span>
+                      </div>
+
+                      <div>
+                        <span className="text-zinc-500 text-[10px] font-mono block">DATE & REF</span>
+                        <span className="text-zinc-300 font-mono text-[11px]">
+                          {vDate || 'In Progress'} · {vCertId || 'CERT-PENDING'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-zinc-800 text-[11px] text-zinc-400 leading-relaxed">
+                      {vNotes || 'Documentation review in progress.'}
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </div>
           )}

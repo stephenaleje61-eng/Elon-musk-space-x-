@@ -53,12 +53,31 @@ service cloud.firestore {
 
     // Private Conversations (Visitors request chat, Admin accepts and manages)
     match /conversations/{conversationId} {
-      allow read, create, update: if true;
+      // Allow read to owner admin, or visitor accessing their own conversation
+      allow read: if isOwnerAdmin() || (isSignedIn() && (resource == null || resource.data.visitorId == request.auth.uid || conversationId == 'conv_' + request.auth.uid));
+      // Create conversation
+      allow create: if isSignedIn() || isOwnerAdmin();
+      // Only admin can toggle isBlocked; non-admins can update their conversation as long as not changing isBlocked
+      allow update: if isOwnerAdmin() || (
+        isSignedIn() &&
+        (resource.data.visitorId == request.auth.uid || conversationId == 'conv_' + request.auth.uid) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isBlocked'])) &&
+        (!resource.data.isBlocked)
+      );
       allow delete: if isOwnerAdmin();
 
       // Messages Subcollection
       match /messages/{messageId} {
-        allow read, create: if true;
+        // Read messages: admin or conversation owner
+        allow read: if isOwnerAdmin() || (
+          isSignedIn() && 
+          (get(/databases/$(database)/documents/conversations/$(conversationId)).data.visitorId == request.auth.uid || conversationId == 'conv_' + request.auth.uid)
+        );
+        // Create message: allowed if admin OR (conversation is NOT blocked)
+        allow create: if isOwnerAdmin() || (
+          isSignedIn() &&
+          (!get(/databases/$(database)/documents/conversations/$(conversationId)).data.isBlocked)
+        );
         allow update, delete: if isOwnerAdmin();
       }
     }
@@ -87,6 +106,12 @@ service cloud.firestore {
     // Admin Audit Logs (Strictly Admin-only)
     match /adminAuditLogs/{logId} {
       allow read, write: if isOwnerAdmin();
+    }
+
+    // Ownership & Authenticity Verification Records
+    match /verification/{docId} {
+      allow read: if true;
+      allow write: if isOwnerAdmin();
     }
   }
 }

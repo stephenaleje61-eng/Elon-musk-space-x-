@@ -224,11 +224,20 @@ export async function sendRealHumanMessage(
   };
 
   try {
+    const convRef = doc(db, 'conversations', conversationId);
+
+    // Enforce blocking constraint: Blocked visitors cannot post new messages
+    if (from === 'visitor') {
+      const convSnap = await getDoc(convRef);
+      if (convSnap.exists() && convSnap.data()?.isBlocked) {
+        throw new Error('This conversation has been blocked by the platform administrator.');
+      }
+    }
+
     const msgRef = doc(db, 'conversations', conversationId, 'messages', messageId);
     await setDoc(msgRef, newMsg);
 
     // Update conversation record
-    const convRef = doc(db, 'conversations', conversationId);
     const updateData: Partial<Conversation> = {
       lastMessageText: summaryText,
       lastMessageTime: now,

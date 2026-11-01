@@ -10,11 +10,12 @@ import {
   LogOut,
   SlidersHorizontal,
 } from 'lucide-react';
-import { SectionId } from '../types';
+import { SectionId, VerificationRecord } from '../types';
+import { VerificationBadge } from './VerificationBadge';
 
 interface NavbarProps {
-  activeSection: SectionId | 'home' | 'investment-hub' | 'admin';
-  onNavigate: (section: SectionId | 'home' | 'investment-hub' | 'admin') => void;
+  activeSection: SectionId | 'home' | 'investment-hub' | 'admin' | 'verification';
+  onNavigate: (section: SectionId | 'home' | 'investment-hub' | 'admin' | 'verification') => void;
   onOpenChat: (initialMessage?: string) => void;
   onOpenSearch: () => void;
   savedCount: number;
@@ -23,6 +24,8 @@ interface NavbarProps {
   userEmail?: string | null;
   onLogout: () => void;
   onOpenAdminAuth: () => void;
+  verificationRecord?: VerificationRecord | null;
+  onOpenVerification?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -36,18 +39,34 @@ export const Navbar: React.FC<NavbarProps> = ({
   userEmail,
   onLogout,
   onOpenAdminAuth,
+  verificationRecord,
+  onOpenVerification,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-zinc-200">
       {/* Top Notification & Independent Disclaimer Bar */}
-      <div className="bg-zinc-950 text-zinc-300 text-xs py-1.5 px-4 text-center border-b border-zinc-800">
-        <span className="font-medium text-white">ELON MUSK SPACE</span>
-        <span className="mx-2 text-zinc-500">·</span>
-        <span>Independent Technology & Space Commerce Marketplace</span>
-        <span className="mx-2 text-zinc-500">·</span>
-        <span className="text-zinc-400">Zero-Login Global Access</span>
+      <div className="bg-zinc-950 text-zinc-300 text-xs py-1.5 px-4 border-b border-zinc-800">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 truncate text-[11px] sm:text-xs">
+            <span className="font-extrabold text-white">ELON MUSK SPACE</span>
+            <span className="text-zinc-500">·</span>
+            <span className="hidden sm:inline text-zinc-400">Independent Technology Index & Marketplace</span>
+            <span className="sm:hidden text-zinc-400">Independent Catalog</span>
+            <span className="text-zinc-500">·</span>
+            <span className="text-zinc-400 hidden md:inline">Zero-Login Global Access</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {verificationRecord && (
+              <VerificationBadge
+                record={verificationRecord}
+                size="sm"
+                onClick={onOpenVerification}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 3-Zone Top Bar Contract */}
@@ -108,6 +127,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             Investment Info
+          </button>
+
+          {/* Ownership & Authenticity Verification Link */}
+          <button
+            onClick={onOpenVerification}
+            className="whitespace-nowrap flex items-center gap-1.5 transition-colors hover:text-blue-600 text-zinc-600 cursor-pointer font-medium text-xs sm:text-sm"
+            title="Official Ownership & Authenticity Verification Registry"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+            <span>Verification</span>
           </button>
 
           {/* Private Admin Dashboard Entry in Navigation */}
