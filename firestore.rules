@@ -8,14 +8,10 @@ service cloud.firestore {
     }
 
     function isOwnerAdmin() {
-      return isSignedIn() && (
-        (request.auth.token.email != null && (
-          request.auth.token.email.lower() == 'elonmusk241@gmail.com' ||
-          request.auth.token.email.lower() == 'sirrodstephen@gmail.com'
-        )) ||
-        (request.auth.uid == '4W2iB38N41cR0hXfN1tP4f4M5uE2') ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
+      return isSignedIn() &&
+        request.auth.token.email != null &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email.lower() == 'sirrodstephen@gmail.com';
     }
 
     function isValidVisitorConversationId(conversationId) {
@@ -34,23 +30,25 @@ service cloud.firestore {
       allow read: if true;
     }
 
-    // Administrators Collection (Restricted to owner or matching authenticated UID)
+    // Administrators Collection (Strictly restricted to verified sirrodstephen@gmail.com)
     match /admins/{adminId} {
-      allow read: if isOwnerAdmin() || (isSignedIn() && (request.auth.uid == adminId || adminId == '4W2iB38N41cR0hXfN1tP4f4M5uE2'));
-      allow write: if isOwnerAdmin() || (isSignedIn() && (
-        request.auth.uid == '4W2iB38N41cR0hXfN1tP4f4M5uE2' ||
-        (request.auth.token.email != null && (
-          request.auth.token.email.lower() == 'elonmusk241@gmail.com' ||
-          request.auth.token.email.lower() == 'sirrodstephen@gmail.com'
-        ))
-      ));
+      allow read: if isOwnerAdmin();
+      allow write: if isOwnerAdmin();
     }
 
-    // Users Collection (Public profiles with admin management)
+    // Users Collection (Admin management; block non-admin privilege escalation)
     match /users/{userId} {
       allow read: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && (request.auth.uid == userId || isOwnerAdmin());
+      allow create: if isOwnerAdmin() || (
+        isSignedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.get('role', 'user') == 'user'
+      );
+      allow update: if isOwnerAdmin() || (
+        isSignedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.get('role', 'user') == resource.data.get('role', 'user')
+      );
       allow delete: if isOwnerAdmin();
     }
 

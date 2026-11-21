@@ -656,16 +656,13 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
     }
   };
 
-  // Host Login via Genuine Google Owner Authentication (no insecure local passcodes)
+  // Host Login via Genuine Google Owner Authentication (strictly restricted to authorized admin email)
   const handleHostGoogleLogin = async () => {
     setHostAuthLoading(true);
     setHostLoginError(null);
     try {
       const user = await signInWithGoogle();
-      const authorized =
-        (await checkIsAdmin(user)) ||
-        isAuthorizedOwnerEmail(user.email) ||
-        user.uid === OWNER_FIREBASE_UID;
+      const authorized = (await checkIsAdmin(user)) && isAuthorizedOwnerEmail(user.email);
 
       if (authorized) {
         setHostUnlocked(true);
@@ -674,18 +671,25 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
       } else {
         await signOut(auth);
         setHostLoginError(
-          `Access Denied: "${user.email || user.uid}" is not the authorized website owner.`
+          `Access Denied: "${user.email || user.uid}" is not the authorized administrator.`
         );
       }
     } catch (err: unknown) {
       console.error('Host Google Sign-In error:', err);
       const fbErr = err as { code?: string; message?: string };
-      if (fbErr?.code === 'auth/popup-blocked') {
+      if (fbErr?.code === 'auth/access-denied') {
+        setHostLoginError('Access Denied: Only the authorized administrator account may access the Host Inbox.');
+      } else if (fbErr?.code === 'auth/popup-blocked') {
         setHostLoginError('Popup blocked by browser. Please allow popups and try again.');
       } else if (fbErr?.code === 'auth/popup-closed-by-user') {
         setHostLoginError('Sign-in cancelled before completion.');
+      } else if (fbErr?.code === 'auth/unauthorized-domain') {
+        const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        setHostLoginError(
+          `Domain Configuration Error: "${host}" must be added in Firebase Console > Authentication > Settings > Authorized domains.`
+        );
       } else {
-        setHostLoginError(fbErr?.message || 'Google authentication failed.');
+        setHostLoginError(fbErr?.message || 'Access Denied: Google authentication failed.');
       }
     } finally {
       setHostAuthLoading(false);

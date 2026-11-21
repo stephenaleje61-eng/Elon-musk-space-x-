@@ -45,8 +45,12 @@ import { OwnershipVerificationSection } from './components/OwnershipVerification
 import { OwnershipVerificationModal } from './components/OwnershipVerificationModal';
 
 export default function App() {
-  // Navigation State
-  const [currentView, setCurrentView] = useState<SectionId | 'home' | 'investment-hub' | 'admin' | 'verification'>('home');
+  // Navigation State (protect direct /admin URL access cleanly)
+  const initialIsAdminPath =
+    typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith('/admin');
+  const [currentView, setCurrentView] = useState<SectionId | 'home' | 'investment-hub' | 'admin' | 'verification'>(
+    initialIsAdminPath ? 'admin' : 'home'
+  );
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   // Firestore Data State
@@ -91,7 +95,9 @@ export default function App() {
         setUser({ uid: fbUser.uid, email: fbUser.email });
         setIsAdmin(isUserAdmin);
         if (isUserAdmin) {
-          setAdminEmail(fbUser.email || 'elonmusk241@gmail.com');
+          setAdminEmail(fbUser.email || '');
+        } else {
+          setAdminEmail('');
         }
       } else {
         setUser(null);

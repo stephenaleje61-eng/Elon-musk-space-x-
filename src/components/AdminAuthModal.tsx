@@ -12,7 +12,6 @@ import { auth } from '../firebase/config';
 import { signOut } from 'firebase/auth';
 import {
   signInWithGoogle,
-  OWNER_PUBLIC_CONTACT_EMAIL,
   OWNER_FIREBASE_UID,
   isAuthorizedOwnerEmail,
   checkIsAdmin,
@@ -37,14 +36,14 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Check if current session is already the authenticated owner
+  // Check if current session is already the authenticated administrator
   const currentFbUser = auth.currentUser;
   const isAlreadyAuthenticatedOwner =
     currentFbUser &&
     !currentFbUser.isAnonymous &&
-    (isAuthorizedOwnerEmail(currentFbUser.email) || currentFbUser.uid === OWNER_FIREBASE_UID);
+    isAuthorizedOwnerEmail(currentFbUser.email);
 
-  // Primary: Google Authentication
+  // Primary: Google Authentication (strictly restricted to authorized owner email)
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError(null);
@@ -54,20 +53,22 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
       const user = await signInWithGoogle();
       const isAuthorized = await checkIsAdmin(user);
 
-      if (isAuthorized || isAuthorizedOwnerEmail(user.email) || user.uid === OWNER_FIREBASE_UID) {
-        await grantAdminByUid(user.uid, user.email || OWNER_PUBLIC_CONTACT_EMAIL);
-        onSuccess(user.email || OWNER_PUBLIC_CONTACT_EMAIL);
+      if (isAuthorized && isAuthorizedOwnerEmail(user.email)) {
+        await grantAdminByUid(user.uid, user.email || '');
+        onSuccess(user.email || '');
         onClose();
       } else {
         await signOut(auth);
         setError(
-          `Unauthorized Google Account: "${user.email || user.uid}" is not authorized. The Administrator Control Console is strictly restricted to the verified website owner.`
+          `Access Denied: "${user.email || user.uid}" is not authorized to access the Administrator Control Console.`
         );
       }
     } catch (err: unknown) {
       console.error('Google sign-in error:', err);
       const firebaseError = err as { code?: string; message?: string };
-      if (firebaseError?.code === 'auth/popup-blocked') {
+      if (firebaseError?.code === 'auth/access-denied') {
+        setError('Access Denied: Only the authorized administrator Google account may access this dashboard.');
+      } else if (firebaseError?.code === 'auth/popup-blocked') {
         setError(
           'Browser Popup Blocked: Your browser blocked the Google sign-in window. Please enable popups for this site or open in a new tab.'
         );
@@ -76,11 +77,14 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
       } else if (firebaseError?.code === 'auth/network-request-failed') {
         setError('Network Error: Could not connect to Firebase Authentication backend. Please verify your connection.');
       } else if (firebaseError?.code === 'auth/unauthorized-domain') {
-        setError('Domain Configuration Error: This domain is not in the Firebase authorized domains list.');
+        const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        setError(
+          `Domain Configuration Error: "${host}" is not in Firebase Console > Authentication > Settings > Authorized domains. Add this domain in Firebase Console and try again.`
+        );
       } else {
         setError(
           firebaseError?.message ||
-            'Authentication verification failed. Please ensure you are signing in with the authorized website owner Google account.'
+            'Access Denied: Authentication verification failed. Please sign in with the authorized administrator account.'
         );
       }
     } finally {
@@ -88,7 +92,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
     }
   };
 
-  // Secondary: Firebase Account UID Verification (no email leaks to visitors)
+  // Secondary: Firebase Account UID Verification (requires active authorized Google session)
   const handleUidOrKeyAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     const input = passcode.trim();
@@ -106,28 +110,28 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
       const matchesOwnerEmail = isAuthorizedOwnerEmail(input);
 
       if (matchesOwnerUid || matchesOwnerEmail) {
-        if (
-          currentFbUser &&
-          !currentFbUser.isAnonymous &&
-          (isAuthorizedOwnerEmail(currentFbUser.email) || currentFbUser.uid === OWNER_FIREBASE_UID)
-        ) {
-          await grantAdminByUid(currentFbUser.uid, currentFbUser.email || OWNER_PUBLIC_CONTACT_EMAIL);
-          onSuccess(currentFbUser.email || OWNER_PUBLIC_CONTACT_EMAIL);
+        if (currentFbUser && !currentFbUser.isAnonymous && isAuthorizedOwnerEmail(currentFbUser.email)) {
+          await grantAdminByUid(currentFbUser.uid, currentFbUser.email || '');
+          onSuccess(currentFbUser.email || '');
           onClose();
           return;
         }
 
+        if (currentFbUser && !currentFbUser.isAnonymous) {
+          await signOut(auth);
+          setError('Access Denied: Active Google account is not the authorized administrator.');
+          return;
+        }
+
         setNotice(
-          'Owner credentials verified. Please click "Sign in with Authorized Google Account" above to obtain server-side cryptographic Firestore authorization tokens.'
+          'Please click "Sign in with Authorized Google Account" above to verify your administrator Google account.'
         );
       } else {
-        setError(
-          'Invalid Credentials: The provided UID or credential is not recognized as the authorized website owner.'
-        );
+        setError('Access Denied: The provided credential is not recognized as the authorized administrator.');
       }
     } catch (err: unknown) {
       console.error('UID verification notice:', err);
-      setError('Authentication verification failed. Please sign in with your authorized Google Account.');
+      setError('Access Denied: Authentication verification failed.');
     } finally {
       setLoading(false);
     }
@@ -174,7 +178,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    onSuccess(currentFbUser.email || OWNER_PUBLIC_CONTACT_EMAIL);
+                    onSuccess(currentFbUser.email || '');
                     onClose();
                   }}
                   className="mt-2.5 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-lg transition-colors cursor-pointer shadow-xs"

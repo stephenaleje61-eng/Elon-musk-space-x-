@@ -13,10 +13,10 @@ import { auth, db } from './config';
 import { UserProfile } from '../types';
 
 export const OWNER_PUBLIC_CONTACT_EMAIL = 'elonmusk241@gmail.com';
-export const OWNER_GOOGLE_EMAIL = 'elonmusk241@gmail.com';
+export const STRICT_ADMIN_EMAIL = 'sirrodstephen@gmail.com';
+export const OWNER_GOOGLE_EMAIL = STRICT_ADMIN_EMAIL;
 export const OWNER_AUTHORIZED_EMAILS = [
-  'elonmusk241@gmail.com',
-  'sirrodstephen@gmail.com',
+  STRICT_ADMIN_EMAIL,
 ];
 export const OWNER_FIREBASE_UID = '4W2iB38N41cR0hXfN1tP4f4M5uE2';
 export const ADMIN_BOOTSTRAP_EMAIL = OWNER_PUBLIC_CONTACT_EMAIL;
@@ -24,7 +24,7 @@ export const ADMIN_BOOTSTRAP_EMAIL = OWNER_PUBLIC_CONTACT_EMAIL;
 export function isAuthorizedOwnerEmail(email?: string | null): boolean {
   if (!email) return false;
   const normalized = email.trim().toLowerCase();
-  return OWNER_AUTHORIZED_EMAILS.some((allowed) => allowed.toLowerCase() === normalized);
+  return normalized === STRICT_ADMIN_EMAIL;
 }
 
 // Ensure persistence is configured
@@ -36,41 +36,10 @@ try {
   // ignore
 }
 
-// Check if a user is the explicitly authorized website owner
+// Check if a user is strictly the authorized administrator (sirrodstephen@gmail.com)
 export async function checkIsAdmin(user: FirebaseUser | null): Promise<boolean> {
-  if (!user) return false;
-
-  // 1. Direct match on authorized owner Google emails
-  if (isAuthorizedOwnerEmail(user.email)) {
-    return true;
-  }
-
-  // 2. Direct match on authenticated Firebase UID
-  if (user.uid === OWNER_FIREBASE_UID) {
-    return true;
-  }
-
-  // 3. Document in /admins/{uid}
-  try {
-    const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-    if (adminDoc.exists()) {
-      return true;
-    }
-  } catch {
-    // silently fail
-  }
-
-  // 4. Check user profile in /users/{uid}
-  try {
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
-    if (userDoc.exists() && userDoc.data().role === 'admin') {
-      return true;
-    }
-  } catch {
-    // fallback
-  }
-
-  return false;
+  if (!user || user.isAnonymous) return false;
+  return isAuthorizedOwnerEmail(user.email);
 }
 
 function generatePersistentVisitorId(): string {
@@ -158,7 +127,7 @@ export async function ensureAnonymousAuth(): Promise<{
   return pendingAnonPromise;
 }
 
-// Sign in with Google (preferred for popup auth)
+// Sign in with Google (strictly enforces sirrodstephen@gmail.com for admin login)
 export async function signInWithGoogle(): Promise<FirebaseUser> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
@@ -170,17 +139,21 @@ export async function signInWithGoogle(): Promise<FirebaseUser> {
     }
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
-    const isOwner =
-      isAuthorizedOwnerEmail(user.email) ||
-      user.uid === OWNER_FIREBASE_UID;
+
+    if (!isAuthorizedOwnerEmail(user.email)) {
+      await signOut(auth);
+      const err = new Error('Access Denied: Only the authorized administrator account may sign in.');
+      (err as Error & { code?: string }).code = 'auth/access-denied';
+      throw err;
+    }
 
     const profile: UserProfile = {
       id: user.uid,
       email: user.email || undefined,
-      displayName: user.displayName || (isOwner ? 'Platform Administrator' : 'Authorized User'),
+      displayName: user.displayName || 'Platform Administrator',
       photoURL: user.photoURL || undefined,
       isAnonymous: false,
-      role: isOwner ? 'admin' : 'user',
+      role: 'admin',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -191,22 +164,20 @@ export async function signInWithGoogle(): Promise<FirebaseUser> {
       console.warn('Profile sync notice:', e);
     }
 
-    if (isOwner) {
-      try {
-        await setDoc(
-          doc(db, 'admins', user.uid),
-          {
-            id: user.uid,
-            email: user.email || OWNER_PUBLIC_CONTACT_EMAIL,
-            role: 'admin',
-            addedAt: new Date().toISOString(),
-          },
-          { merge: true }
-        );
-        localStorage.setItem('elon_admin_authorized_email', user.email || OWNER_PUBLIC_CONTACT_EMAIL);
-      } catch (e) {
-        console.warn('Admin record sync notice:', e);
-      }
+    try {
+      await setDoc(
+        doc(db, 'admins', user.uid),
+        {
+          id: user.uid,
+          email: user.email || STRICT_ADMIN_EMAIL,
+          role: 'admin',
+          addedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+      localStorage.setItem('elon_admin_authorized_email', user.email || STRICT_ADMIN_EMAIL);
+    } catch (e) {
+      console.warn('Admin record sync notice:', e);
     }
 
     return user;
@@ -222,14 +193,26 @@ export async function logOutUser(): Promise<void> {
   await signOut(auth);
 }
 
-// Subscribe to auth state changes
+// Subscribe to auth state changes (auto-signs out unauthorized non-anonymous sessions)
 export function subscribeToAuth(callback: (user: FirebaseUser | null, isAdmin: boolean) => void) {
   return onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      const isAdmin = await checkIsAdmin(user);
-      callback(user, isAdmin);
-    } else {
+    if (!user) {
       callback(null, false);
+      return;
     }
+    if (user.isAnonymous) {
+      callback(user, false);
+      return;
+    }
+    if (!isAuthorizedOwnerEmail(user.email)) {
+      try {
+        await signOut(auth);
+      } catch {
+        // ignore
+      }
+      callback(null, false);
+      return;
+    }
+    callback(user, true);
   });
 }
