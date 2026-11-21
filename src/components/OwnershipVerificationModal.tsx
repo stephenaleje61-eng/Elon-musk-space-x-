@@ -135,7 +135,7 @@ export const OwnershipVerificationModal: React.FC<OwnershipVerificationModalProp
                 <div className="text-sm font-bold text-white">
                   {isVerified
                     ? record.legalOwnerName
-                    : `${record.legalOwnerName || 'Stephen Sirrod'} (Audit In Progress)`}
+                    : `${record.legalOwnerName || 'Independent Operator'} (Audit In Progress)`}
                 </div>
               </div>
               <div>
@@ -211,10 +211,18 @@ export const OwnershipVerificationModal: React.FC<OwnershipVerificationModalProp
               <div>
                 <span className="text-zinc-500 font-mono">Administration Email: </span>
                 <a
-                  href={`mailto:${record.officialContactEmail || 'sirrodstephen@gmail.com'}`}
+                  href={`mailto:${
+                    record.officialContactEmail &&
+                    record.officialContactEmail.toLowerCase() !== 'sirrodstephen@gmail.com'
+                      ? record.officialContactEmail
+                      : 'elonmusk241@gmail.com'
+                  }`}
                   className="font-bold text-white hover:text-blue-400 underline font-mono"
                 >
-                  {record.officialContactEmail || 'sirrodstephen@gmail.com'}
+                  {record.officialContactEmail &&
+                  record.officialContactEmail.toLowerCase() !== 'sirrodstephen@gmail.com'
+                    ? record.officialContactEmail
+                    : 'elonmusk241@gmail.com'}
                 </a>
               </div>
 

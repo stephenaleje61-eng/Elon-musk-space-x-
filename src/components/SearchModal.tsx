@@ -28,22 +28,22 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   const matchedProducts = q
     ? products.filter(
         (p) =>
-          p.title.toLowerCase().includes(q) ||
-          p.subtitle.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q) ||
-          p.sectionId.toLowerCase().includes(q) ||
-          p.description.toLowerCase().includes(q)
+          (p.title || '').toLowerCase().includes(q) ||
+          (p.subtitle || '').toLowerCase().includes(q) ||
+          (p.category || '').toLowerCase().includes(q) ||
+          (p.sectionId || '').toLowerCase().includes(q) ||
+          (p.description || '').toLowerCase().includes(q)
       )
     : [];
 
   const matchedArticles = q
     ? articles.filter(
         (a) =>
-          a.title.toLowerCase().includes(q) ||
-          a.subtitle.toLowerCase().includes(q) ||
-          a.category.toLowerCase().includes(q) ||
-          a.sectionId.toLowerCase().includes(q) ||
-          a.content.toLowerCase().includes(q)
+          (a.title || '').toLowerCase().includes(q) ||
+          (a.subtitle || '').toLowerCase().includes(q) ||
+          (a.category || '').toLowerCase().includes(q) ||
+          (a.sectionId || '').toLowerCase().includes(q) ||
+          (a.content || '').toLowerCase().includes(q)
       )
     : [];
 

@@ -70,16 +70,16 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* 3-Zone Top Bar Contract */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-6">
         {/* Zone 1: Brand Wordmark (Single text element) */}
         <button
           onClick={() => {
             onNavigate('home');
             setMobileMenuOpen(false);
           }}
-          className="text-left group cursor-pointer focus:outline-none"
+          className="text-left group cursor-pointer focus:outline-none min-w-0"
         >
-          <span className="text-lg sm:text-xl font-extrabold tracking-tight text-zinc-950 group-hover:text-blue-600 transition-colors whitespace-nowrap shrink-0">
+          <span className="text-sm sm:text-xl font-extrabold tracking-tight text-zinc-950 group-hover:text-blue-600 transition-colors whitespace-nowrap shrink-0">
             ELON MUSK SPACE
           </span>
         </button>
@@ -163,11 +163,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         {/* Zone 3: 1 Primary Action + Quick Utilities */}
-        <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
           {/* Quick Search */}
           <button
             onClick={onOpenSearch}
-            className="p-2 text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
+            className="p-1.5 sm:p-2 text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
             aria-label="Search catalog"
             title="Search products and articles"
           >
@@ -177,19 +177,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Bookmarks / Saved */}
           <button
             onClick={onOpenSavedDrawer}
-            className="relative p-2 text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
+            className="relative p-1.5 sm:p-2 text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
             aria-label="Saved items"
             title="View saved items"
           >
             <Bookmark className="w-4 h-4" />
             {savedCount > 0 && (
-              <span className="absolute top-1 right-1 w-4 h-4 bg-zinc-950 text-white text-[10px] font-bold rounded-full flex items-center justify-center tabular-nums">
+              <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-zinc-950 text-white text-[10px] font-bold rounded-full flex items-center justify-center tabular-nums">
                 {savedCount}
               </span>
             )}
           </button>
 
-          {/* Private Admin Portal Icon Button */}
+          {/* Private Admin Portal Icon Button (accessible via drawer on narrow mobile) */}
           <button
             onClick={() => {
               if (isAdmin) {
@@ -198,7 +198,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onOpenAdminAuth();
               }
             }}
-            className={`p-2 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
+            className={`hidden sm:flex p-2 rounded-lg transition-colors cursor-pointer items-center gap-1.5 ${
               activeSection === 'admin'
                 ? 'bg-zinc-950 text-white'
                 : isAdmin
@@ -217,16 +217,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Primary Action Button: MESSAGE ELON MUSK */}
           <button
             onClick={() => onOpenChat()}
-            className="flex items-center gap-2 px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-extrabold text-white bg-black hover:bg-zinc-800 active:bg-zinc-900 border border-zinc-800 shadow-sm rounded-lg transition-all transform hover:-translate-y-0.5 cursor-pointer whitespace-nowrap shrink-0"
+            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-sm font-extrabold text-white bg-black hover:bg-zinc-800 active:bg-zinc-900 border border-zinc-800 shadow-sm rounded-lg transition-all transform hover:-translate-y-0.5 cursor-pointer whitespace-nowrap shrink-0"
           >
-            <MessageSquare className="w-4 h-4 text-white" />
-            <span>MESSAGE ELON MUSK</span>
+            <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+            <span className="sm:hidden">MESSAGE</span>
+            <span className="hidden sm:inline">MESSAGE ELON MUSK</span>
           </button>
 
           {/* Mobile hamburger */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="lg:hidden p-2 text-zinc-700 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
+            className="lg:hidden p-1.5 sm:p-2 text-zinc-700 hover:text-zinc-950 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
             aria-label="Toggle navigation menu"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}

@@ -118,8 +118,28 @@ export function compressImageFile(
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        const mimeType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-        const dataUrl = canvas.toDataURL(mimeType, quality);
+
+        // Firestore documents have a strict 1 MiB limit. Target <= 420 KB encoded payload.
+        const MAX_DATA_URL_LEN = 420 * 1024;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+        let q = quality;
+        while (dataUrl.length > MAX_DATA_URL_LEN && q > 0.35) {
+          q -= 0.12;
+          dataUrl = canvas.toDataURL('image/jpeg', Math.max(0.35, q));
+        }
+
+        // If still over budget, downscale dimensions
+        if (dataUrl.length > MAX_DATA_URL_LEN) {
+          const scale = 0.65;
+          canvas.width = Math.max(320, Math.round(width * scale));
+          canvas.height = Math.max(240, Math.round(height * scale));
+          const ctx2 = canvas.getContext('2d');
+          if (ctx2) {
+            ctx2.drawImage(img, 0, 0, canvas.width, canvas.height);
+            dataUrl = canvas.toDataURL('image/jpeg', 0.65);
+          }
+        }
+
         resolve(dataUrl);
       };
       img.onerror = () => reject(new Error('Failed to load image for compression'));

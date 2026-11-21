@@ -12,9 +12,20 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './config';
 import { UserProfile } from '../types';
 
-export const OWNER_GOOGLE_EMAIL = 'sirrodstephen@gmail.com';
+export const OWNER_PUBLIC_CONTACT_EMAIL = 'elonmusk241@gmail.com';
+export const OWNER_GOOGLE_EMAIL = 'elonmusk241@gmail.com';
+export const OWNER_AUTHORIZED_EMAILS = [
+  'elonmusk241@gmail.com',
+  'sirrodstephen@gmail.com',
+];
 export const OWNER_FIREBASE_UID = '4W2iB38N41cR0hXfN1tP4f4M5uE2';
-export const ADMIN_BOOTSTRAP_EMAIL = OWNER_GOOGLE_EMAIL;
+export const ADMIN_BOOTSTRAP_EMAIL = OWNER_PUBLIC_CONTACT_EMAIL;
+
+export function isAuthorizedOwnerEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const normalized = email.trim().toLowerCase();
+  return OWNER_AUTHORIZED_EMAILS.some((allowed) => allowed.toLowerCase() === normalized);
+}
 
 // Ensure persistence is configured
 try {
@@ -29,8 +40,8 @@ try {
 export async function checkIsAdmin(user: FirebaseUser | null): Promise<boolean> {
   if (!user) return false;
 
-  // 1. Direct match on authenticated Google Email
-  if (user.email && user.email.toLowerCase() === OWNER_GOOGLE_EMAIL.toLowerCase()) {
+  // 1. Direct match on authorized owner Google emails
+  if (isAuthorizedOwnerEmail(user.email)) {
     return true;
   }
 
@@ -62,7 +73,41 @@ export async function checkIsAdmin(user: FirebaseUser | null): Promise<boolean> 
   return false;
 }
 
-// Ensure anonymous visitor authentication when interacting with private features
+function generatePersistentVisitorId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return 'anon_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
+    }
+  } catch {
+    // fallback below
+  }
+  const partA = Math.random().toString(36).slice(2, 12);
+  const partB = Math.random().toString(36).slice(2, 12);
+  return 'anon_' + (partA + partB).slice(0, 20);
+}
+
+let pendingAnonPromise: Promise<{
+  uid: string;
+  displayName?: string | null;
+  email?: string | null;
+  isAnonymous: boolean;
+}> | null = null;
+
+function getOrCreateCachedVisitorUser() {
+  let cachedId = localStorage.getItem('elon_visitor_anon_uid');
+  if (!cachedId || !/^anon_[A-Za-z0-9_-]{8,64}$/.test(cachedId)) {
+    cachedId = generatePersistentVisitorId();
+    localStorage.setItem('elon_visitor_anon_uid', cachedId);
+  }
+  return {
+    uid: cachedId,
+    displayName: 'Visitor #' + cachedId.slice(5, 9).toUpperCase(),
+    email: null,
+    isAnonymous: true,
+  };
+}
+
+// Ensure anonymous visitor authentication (with persistent high-entropy session fallback if project disables anon provider)
 export async function ensureAnonymousAuth(): Promise<{
   uid: string;
   displayName?: string | null;
@@ -72,37 +117,45 @@ export async function ensureAnonymousAuth(): Promise<{
   if (auth.currentUser) {
     return auth.currentUser;
   }
-  try {
-    const userCred = await signInAnonymously(auth);
-    // Record user profile in firestore
-    const user = userCred.user;
-    const profile: UserProfile = {
-      id: user.uid,
-      displayName: `Visitor #${user.uid.slice(0, 5).toUpperCase()}`,
-      isAnonymous: true,
-      role: 'user',
-      createdAt: new Date().toISOString(),
-    };
-    try {
-      await setDoc(doc(db, 'users', user.uid), profile, { merge: true });
-    } catch {
-      // ignore
-    }
-    return user;
-  } catch (error) {
-    console.warn('Anonymous auth notice (using session fallback):', error);
-    let cachedId = localStorage.getItem('elon_visitor_anon_uid');
-    if (!cachedId) {
-      cachedId = 'anon_' + Math.random().toString(36).substring(2, 10);
-      localStorage.setItem('elon_visitor_anon_uid', cachedId);
-    }
-    return {
-      uid: cachedId,
-      displayName: 'Visitor #' + cachedId.slice(5, 9).toUpperCase(),
-      email: null,
-      isAnonymous: true,
-    };
+
+  if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('elon_anon_auth_unavailable') === '1') {
+    return getOrCreateCachedVisitorUser();
   }
+
+  if (pendingAnonPromise) {
+    return pendingAnonPromise;
+  }
+
+  pendingAnonPromise = (async () => {
+    try {
+      const userCred = await signInAnonymously(auth);
+      const user = userCred.user;
+      const profile: UserProfile = {
+        id: user.uid,
+        displayName: `Visitor #${user.uid.slice(0, 5).toUpperCase()}`,
+        isAnonymous: true,
+        role: 'user',
+        createdAt: new Date().toISOString(),
+      };
+      try {
+        await setDoc(doc(db, 'users', user.uid), profile, { merge: true });
+      } catch {
+        // ignore non-fatal profile sync error
+      }
+      return user;
+    } catch (error: unknown) {
+      const fbErr = error as { code?: string };
+      if (fbErr?.code === 'auth/admin-restricted-operation' && typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('elon_anon_auth_unavailable', '1');
+      }
+      console.warn('Firebase Anonymous Auth notice (using persistent device visitor ID):', error);
+      return getOrCreateCachedVisitorUser();
+    } finally {
+      pendingAnonPromise = null;
+    }
+  })();
+
+  return pendingAnonPromise;
 }
 
 // Sign in with Google (preferred for popup auth)
@@ -118,7 +171,7 @@ export async function signInWithGoogle(): Promise<FirebaseUser> {
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
     const isOwner =
-      (user.email && user.email.toLowerCase() === OWNER_GOOGLE_EMAIL.toLowerCase()) ||
+      isAuthorizedOwnerEmail(user.email) ||
       user.uid === OWNER_FIREBASE_UID;
 
     const profile: UserProfile = {
@@ -140,13 +193,17 @@ export async function signInWithGoogle(): Promise<FirebaseUser> {
 
     if (isOwner) {
       try {
-        await setDoc(doc(db, 'admins', user.uid), {
-          id: user.uid,
-          email: user.email || OWNER_GOOGLE_EMAIL,
-          role: 'admin',
-          addedAt: new Date().toISOString(),
-        }, { merge: true });
-        localStorage.setItem('elon_admin_authorized_email', user.email || OWNER_GOOGLE_EMAIL);
+        await setDoc(
+          doc(db, 'admins', user.uid),
+          {
+            id: user.uid,
+            email: user.email || OWNER_PUBLIC_CONTACT_EMAIL,
+            role: 'admin',
+            addedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+        localStorage.setItem('elon_admin_authorized_email', user.email || OWNER_PUBLIC_CONTACT_EMAIL);
       } catch (e) {
         console.warn('Admin record sync notice:', e);
       }

@@ -9,30 +9,25 @@ import {
   query,
   orderBy,
   limit,
+  increment,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './config';
 import { Conversation, Message } from '../types';
 
-export const LOCAL_STORAGE_KEY = 'elon_real_human_chat_v1';
+export const VISITOR_PROFILE_KEY = 'elon_visitor_profile_v1';
 
-export interface LocalChatBackup {
+export interface VisitorProfileMeta {
   visitorId?: string;
   visitorName?: string;
-  visitorLocation?: string;
-  initialMessage?: string;
-  status?: 'pending' | 'accepted' | 'declined';
-  submittedAt?: string;
   conversationId?: string;
-  messages?: Message[];
-  updatedAt?: string;
 }
 
 /**
- * Read the local recovery backup
+ * Read visitor profile preference (display name & conversation id only — no fake/cached messages)
  */
-export function getLocalChatBackup(): LocalChatBackup {
+export function getLocalChatBackup(): VisitorProfileMeta {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    const raw = localStorage.getItem(VISITOR_PROFILE_KEY);
     if (!raw) return {};
     return JSON.parse(raw);
   } catch {
@@ -41,19 +36,18 @@ export function getLocalChatBackup(): LocalChatBackup {
 }
 
 /**
- * Save data to local recovery backup
+ * Save visitor display profile preference
  */
-export function updateLocalChatBackup(patch: Partial<LocalChatBackup>): void {
+export function updateLocalChatBackup(patch: Partial<VisitorProfileMeta>): void {
   try {
     const current = getLocalChatBackup();
     const updated = {
       ...current,
       ...patch,
-      updatedAt: new Date().toISOString(),
     };
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+    localStorage.setItem(VISITOR_PROFILE_KEY, JSON.stringify(updated));
   } catch (err) {
-    console.warn('Failed to update localStorage backup:', err);
+    console.warn('Failed to persist visitor profile preference:', err);
   }
 }
 
@@ -81,6 +75,7 @@ export async function submitJoinRequest(
     lastMessageTime: now,
     unreadAdminCount: 1,
     unreadVisitorCount: 0,
+    isBlocked: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -88,30 +83,25 @@ export async function submitJoinRequest(
   try {
     const convRef = doc(db, 'conversations', conversationId);
     await setDoc(convRef, conversationData, { merge: true });
-
-    // Store local recovery backup
     updateLocalChatBackup({
       visitorId,
       visitorName: name.trim(),
-      visitorLocation: location.trim(),
-      initialMessage: message.trim(),
-      status: 'pending',
-      submittedAt: now,
       conversationId,
     });
-
     return conversationId;
   } catch (error) {
+    console.error('Firestore submitJoinRequest error:', error);
     handleFirestoreError(error, OperationType.WRITE, `conversations/${conversationId}`);
   }
 }
 
 /**
- * Real-time listener for a visitor's conversation state
+ * Real-time listener for a visitor's conversation document
  */
 export function subscribeToVisitorConversation(
   conversationId: string,
-  onUpdate: (conv: Conversation | null) => void
+  onUpdate: (conv: Conversation | null) => void,
+  onError?: (err: Error) => void
 ) {
   const convRef = doc(db, 'conversations', conversationId);
   return onSnapshot(
@@ -119,11 +109,8 @@ export function subscribeToVisitorConversation(
     (snapshot) => {
       if (snapshot.exists()) {
         const data = { ...snapshot.data(), id: snapshot.id } as Conversation;
-        // Synchronize local backup
         updateLocalChatBackup({
-          status: data.status,
           visitorName: data.visitorName,
-          visitorLocation: data.visitorLocation,
           conversationId: data.id,
         });
         onUpdate(data);
@@ -132,67 +119,56 @@ export function subscribeToVisitorConversation(
       }
     },
     (err) => {
-      console.warn('Visitor conversation listener error:', err);
-      // Fallback to local backup if offline
-      const local = getLocalChatBackup();
-      if (local.conversationId === conversationId && local.status) {
-        onUpdate({
-          id: conversationId,
-          visitorId: local.visitorId || '',
-          visitorName: local.visitorName || '',
-          visitorLocation: local.visitorLocation || '',
-          initialMessage: local.initialMessage || '',
-          status: local.status,
-          submittedAt: local.submittedAt || '',
-          lastMessageText: '',
-          lastMessageTime: '',
-          unreadAdminCount: 0,
-          unreadVisitorCount: 0,
-          createdAt: local.submittedAt || '',
-          updatedAt: local.updatedAt || '',
-        });
-      } else {
-        onUpdate(null);
-      }
+      console.error('Firestore visitor conversation listener error:', err);
+      if (onError) onError(err);
     }
   );
 }
 
 /**
- * Real-time listener for messages in an active conversation
+ * Real-time listener for messages in an active conversation (strictly Cloud Firestore onSnapshot)
  */
 export function subscribeToRealMessages(
   conversationId: string,
-  onUpdate: (messages: Message[]) => void
+  onUpdate: (messages: Message[]) => void,
+  onError?: (err: Error) => void
 ) {
   const messagesRef = collection(db, 'conversations', conversationId, 'messages');
   const q = query(messagesRef, orderBy('createdAt', 'asc'), limit(250));
 
   return onSnapshot(
     q,
+    { includeMetadataChanges: true },
     (snapshot) => {
       const msgs: Message[] = [];
       snapshot.forEach((d) => {
-        msgs.push({ ...d.data(), id: d.id } as Message);
+        const raw = d.data() as Message;
+        const isPendingWrite = d.metadata.hasPendingWrites;
+        msgs.push({
+          ...raw,
+          id: d.id,
+          deliveryStatus: isPendingWrite ? 'sent' : 'delivered',
+        });
       });
-      // Update local storage backup
-      updateLocalChatBackup({ messages: msgs });
       onUpdate(msgs);
     },
     (err) => {
-      console.warn('Real messages listener error:', err);
-      const local = getLocalChatBackup();
-      if (local.messages && local.messages.length > 0) {
-        onUpdate(local.messages);
-      } else {
-        onUpdate([]);
-      }
+      console.error('Firestore real-time messages listener error:', err);
+      if (onError) onError(err);
     }
   );
 }
 
 /**
- * Send real human message with optional image attachment
+ * Generate a stable client-side message ID so retries are idempotent and never create duplicates
+ */
+export function createMessageId(): string {
+  return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/**
+ * Send real human message with optional image attachment.
+ * Idempotent when existingMessageId is provided so retries never create duplicate messages.
  */
 export async function sendRealHumanMessage(
   conversationId: string,
@@ -201,13 +177,14 @@ export async function sendRealHumanMessage(
   senderName: string,
   text: string,
   imageUrl?: string,
-  imageCaption?: string
+  imageCaption?: string,
+  existingMessageId?: string
 ): Promise<Message> {
-  const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const messageId = existingMessageId || createMessageId();
   const now = new Date().toISOString();
 
   const trimmedText = text.trim();
-  const summaryText = trimmedText || (imageUrl ? '📷 Photo' : '');
+  const summaryText = trimmedText || (imageUrl ? 'Photo attachment' : '');
 
   const newMsg: Message = {
     id: messageId,
@@ -225,39 +202,45 @@ export async function sendRealHumanMessage(
 
   try {
     const convRef = doc(db, 'conversations', conversationId);
+    const visitorIdFromConv = conversationId.startsWith('conv_')
+      ? conversationId.slice(5)
+      : senderId;
 
-    // Enforce blocking constraint: Blocked visitors cannot post new messages
+    // Enforce blocking constraint for visitor messages if doc already exists
     if (from === 'visitor') {
       const convSnap = await getDoc(convRef);
-      if (convSnap.exists() && convSnap.data()?.isBlocked) {
+      if (convSnap.exists() && convSnap.data()?.isBlocked === true) {
         throw new Error('This conversation has been blocked by the platform administrator.');
       }
     }
 
-    const msgRef = doc(db, 'conversations', conversationId, 'messages', messageId);
-    await setDoc(msgRef, newMsg);
-
-    // Update conversation record
-    const updateData: Partial<Conversation> = {
+    // 1. Ensure parent conversation document exists / update metadata safely with merge
+    const convPatch: Record<string, unknown> = {
+      id: conversationId,
+      visitorId: visitorIdFromConv,
+      status: 'accepted',
       lastMessageText: summaryText,
       lastMessageTime: now,
       updatedAt: now,
     };
     if (from === 'visitor') {
-      updateData.unreadAdminCount = 1;
+      convPatch.visitorName = senderName;
+      convPatch.unreadAdminCount = increment(1);
     } else {
-      updateData.unreadVisitorCount = 1;
+      convPatch.unreadVisitorCount = increment(1);
     }
+    await setDoc(convRef, convPatch, { merge: true });
 
-    await updateDoc(convRef, updateData);
+    // 2. Write message document idempotently using exact messageId (prevents duplicates on retry)
+    const msgRef = doc(db, 'conversations', conversationId, 'messages', messageId);
+    await setDoc(msgRef, newMsg, { merge: true });
 
-    // Save to local backup
-    const local = getLocalChatBackup();
-    const existingMsgs = local.messages || [];
-    updateLocalChatBackup({ messages: [...existingMsgs, newMsg] });
-
-    return newMsg;
+    return {
+      ...newMsg,
+      deliveryStatus: 'sent',
+    };
   } catch (error) {
+    console.error('Firebase sendRealHumanMessage error:', error);
     handleFirestoreError(
       error,
       OperationType.WRITE,
@@ -270,7 +253,8 @@ export async function sendRealHumanMessage(
  * Real-time listener for ALL conversations (Administrator Interface)
  */
 export function subscribeToAllAdminConversations(
-  onUpdate: (convs: Conversation[]) => void
+  onUpdate: (convs: Conversation[]) => void,
+  onError?: (err: Error) => void
 ) {
   const colRef = collection(db, 'conversations');
   const q = query(colRef, orderBy('updatedAt', 'desc'), limit(150));
@@ -285,7 +269,8 @@ export function subscribeToAllAdminConversations(
       onUpdate(list);
     },
     (err) => {
-      console.warn('Admin conversations listener error:', err);
+      console.error('Firestore admin conversations listener error:', err);
+      if (onError) onError(err);
       onUpdate([]);
     }
   );
@@ -303,13 +288,16 @@ export async function acceptJoinRequest(
   const now = new Date().toISOString();
   try {
     const convRef = doc(db, 'conversations', conversationId);
-    await updateDoc(convRef, {
-      status: 'accepted',
-      acceptedAt: now,
-      updatedAt: now,
-    });
+    await setDoc(
+      convRef,
+      {
+        status: 'accepted',
+        acceptedAt: now,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
 
-    // If visitor submitted an initial message with the join request, record it as first message
     if (initialVisitorMessage && initialVisitorMessage.trim()) {
       const convSnap = await getDoc(convRef);
       const visitorId = convSnap.exists() ? convSnap.data().visitorId : '';
@@ -326,9 +314,10 @@ export async function acceptJoinRequest(
         real: true,
         createdAt: now,
       };
-      await setDoc(msgRef, firstMsg);
+      await setDoc(msgRef, firstMsg, { merge: true });
     }
   } catch (error) {
+    console.error('Firestore acceptJoinRequest error:', error);
     handleFirestoreError(error, OperationType.UPDATE, `conversations/${conversationId}`);
   }
 }
@@ -346,6 +335,7 @@ export async function declineJoinRequest(conversationId: string): Promise<void> 
       updatedAt: now,
     });
   } catch (error) {
+    console.error('Firestore declineJoinRequest error:', error);
     handleFirestoreError(error, OperationType.UPDATE, `conversations/${conversationId}`);
   }
 }
@@ -371,7 +361,7 @@ export async function exportAllChatsJson(): Promise<string> {
     return JSON.stringify(
       {
         exportedAt: new Date().toISOString(),
-        version: 'elon_real_human_chat_v1',
+        version: 'elon_real_human_chat_v2',
         totalConversations: dump.length,
         data: dump,
       },
@@ -380,9 +370,7 @@ export async function exportAllChatsJson(): Promise<string> {
     );
   } catch (error) {
     console.error('Failed to export all chats:', error);
-    // Fallback to local storage
-    const local = getLocalChatBackup();
-    return JSON.stringify({ exportedAt: new Date().toISOString(), localBackup: local }, null, 2);
+    throw error;
   }
 }
 
@@ -396,7 +384,8 @@ export async function sendMessage(
   senderRole: 'visitor' | 'admin',
   senderName: string,
   text: string,
-  imageUrl?: string
+  imageUrl?: string,
+  existingMessageId?: string
 ): Promise<Message> {
   return sendRealHumanMessage(
     conversationId,
@@ -404,7 +393,9 @@ export async function sendMessage(
     senderId,
     senderName,
     text,
-    imageUrl
+    imageUrl,
+    undefined,
+    existingMessageId
   );
 }
 
@@ -415,9 +406,9 @@ export async function markMessagesAsRead(
   try {
     const convRef = doc(db, 'conversations', conversationId);
     if (role === 'admin') {
-      await updateDoc(convRef, { unreadAdminCount: 0 });
+      await setDoc(convRef, { unreadAdminCount: 0 }, { merge: true });
     } else {
-      await updateDoc(convRef, { unreadVisitorCount: 0 });
+      await setDoc(convRef, { unreadVisitorCount: 0 }, { merge: true });
     }
   } catch (err) {
     console.warn('Mark read warning:', err);
@@ -430,8 +421,9 @@ export async function toggleBlockConversation(
 ): Promise<void> {
   try {
     const convRef = doc(db, 'conversations', conversationId);
-    await updateDoc(convRef, { isBlocked, updatedAt: new Date().toISOString() });
+    await setDoc(convRef, { isBlocked, updatedAt: new Date().toISOString() }, { merge: true });
   } catch (err) {
-    console.warn('Block conversation warning:', err);
+    console.error('Block conversation error:', err);
+    throw err;
   }
 }

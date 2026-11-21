@@ -91,7 +91,7 @@ export default function App() {
         setUser({ uid: fbUser.uid, email: fbUser.email });
         setIsAdmin(isUserAdmin);
         if (isUserAdmin) {
-          setAdminEmail(fbUser.email || 'sirrodstephen@gmail.com');
+          setAdminEmail(fbUser.email || 'elonmusk241@gmail.com');
         }
       } else {
         setUser(null);
@@ -208,7 +208,7 @@ export default function App() {
           <AdminDashboard
             products={products}
             articles={articles}
-            adminEmail={user?.email || adminEmail || 'sirrodstephen@gmail.com'}
+            adminEmail={user?.email || adminEmail || 'elonmusk241@gmail.com'}
             adminId={user?.uid || 'admin'}
             onLogout={handleLogout}
             onBackToStore={() => setCurrentView('home')}
@@ -223,7 +223,7 @@ export default function App() {
             </div>
             <h2 className="text-xl font-bold text-zinc-950 mb-2">Administrator Access Restricted</h2>
             <p className="text-sm text-zinc-600 mb-6 leading-relaxed">
-              The Administrator Control Console is restricted exclusively to the verified website owner (<span className="font-mono font-medium text-zinc-900">sirrodstephen@gmail.com</span>). Ordinary visitors cannot access administrative tools.
+              The Administrator Control Console is restricted exclusively to the verified website owner. Ordinary visitors cannot access administrative tools.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <button
@@ -390,7 +390,7 @@ export default function App() {
                     isSaved={savedItemIds.has(prod.id)}
                     onQuickChat={(p) =>
                       handleOpenChat(
-                        `Inquiry regarding ${p.title} ($${p.price.toLocaleString()}): allocation scheduling.`
+                        `Inquiry regarding ${p.title} ($${Number(p.price || 0).toLocaleString()}): allocation scheduling.`
                       )
                     }
                   />

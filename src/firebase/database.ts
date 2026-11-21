@@ -182,7 +182,7 @@ export const INITIAL_PRODUCTS: Product[] = [
       'Weather Resistance': 'IP67 waterproof with snow melt',
       'Power Consumption': '50–75 W typical',
     },
-    images: ['https://images.unsplash.com/photo-1495578942200-c5f5d7af99d3?w=600'],
+    images: ['https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=600'],
     description: 'Engineered by SpaceX to deliver high-speed, low-latency broadband internet across the most remote oceans, mountain peaks, and rural communities on Earth.',
     isFeatured: true,
     inStock: true,
@@ -345,7 +345,7 @@ export const INITIAL_ARTICLES: Article[] = [
     category: 'Satellite internet',
     author: 'Starlink Constellation Architecture',
     readTime: '4 min read',
-    coverImage: 'https://images.unsplash.com/photo-1495578942200-c5f5d7af99d3?w=600',
+    coverImage: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=600',
     content: `For decades, satellite phones required giant specialized antennas and exorbitant subscription rates. With Starlink Direct-to-Cell, SpaceX has placed active cellular towers into space orbit.\n\nEquipped with enormous 25-square-meter phased array antennas, v2 mini satellites operate Doppler-corrected LTE protocol stacks that connect directly to ordinary, unmodified consumer smartphones anywhere on Earth where the sky is visible.`,
     tags: ['Starlink', 'Cellular', 'Phased Array', 'Global Telecom'],
     isFeatured: true,
@@ -368,7 +368,7 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
       for (const docSnap of productsSnap.docs) {
         const data = docSnap.data();
         const firstImg = data.images?.[0] || '';
-        if (!firstImg || firstImg.startsWith('/src/assets/images')) {
+        if (!firstImg || firstImg.startsWith('/src/assets/images') || firstImg.includes('photo-1495578942200')) {
           const matching = INITIAL_PRODUCTS.find((p) => p.id === docSnap.id);
           if (matching) {
             await setDoc(
@@ -379,7 +379,7 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
                 updatedAt: new Date().toISOString(),
               },
               { merge: true }
-            );
+            ).catch(() => {});
           }
         }
       }
@@ -388,12 +388,12 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
     const articlesSnap = await getDocs(collection(db, 'articles'));
     if (articlesSnap.empty) {
       for (const art of INITIAL_ARTICLES) {
-        await setDoc(doc(db, 'articles', art.id), art);
+        await setDoc(doc(db, 'articles', art.id), art).catch(() => {});
       }
     } else {
       for (const docSnap of articlesSnap.docs) {
         const data = docSnap.data();
-        if (!data.coverImage || data.coverImage.startsWith('/src/assets/images')) {
+        if (!data.coverImage || data.coverImage.startsWith('/src/assets/images') || data.coverImage.includes('photo-1495578942200')) {
           const matching = INITIAL_ARTICLES.find((a) => a.id === docSnap.id);
           if (matching) {
             await setDoc(
@@ -404,7 +404,7 @@ export async function seedDatabaseIfEmpty(): Promise<void> {
                 updatedAt: new Date().toISOString(),
               },
               { merge: true }
-            );
+            ).catch(() => {});
           }
         }
       }
@@ -589,7 +589,7 @@ export const DEFAULT_VERIFICATION_RECORD: VerificationRecord = {
   operatingCompanyName: 'Independent Platform Administration & Media',
   companyRegistrationNumber: 'REG-PENDING-AUDIT-2026',
   jurisdiction: 'United States & Global Cloud Operations',
-  officialContactEmail: 'sirrodstephen@gmail.com',
+  officialContactEmail: 'elonmusk241@gmail.com',
   officialSupportPhone: '+1 (800) 555-0199',
   registeredAddress: 'Independent Administrative Command, Austin, TX & Global Cloud Network',
   verificationProvider: 'Independent Third-Party Verification Authority',
@@ -602,13 +602,31 @@ export const DEFAULT_VERIFICATION_RECORD: VerificationRecord = {
   updatedBy: 'system_init',
 };
 
+function sanitizeVerificationRecord(rec: VerificationRecord): VerificationRecord {
+  const email = (rec.officialContactEmail || '').trim().toLowerCase();
+  const safeEmail =
+    !email || email === 'sirrodstephen@gmail.com'
+      ? 'elonmusk241@gmail.com'
+      : rec.officialContactEmail;
+  const safeUpdatedBy =
+    (rec.updatedBy || '').trim().toLowerCase() === 'sirrodstephen@gmail.com'
+      ? 'elonmusk241@gmail.com'
+      : rec.updatedBy;
+  return {
+    ...DEFAULT_VERIFICATION_RECORD,
+    ...rec,
+    officialContactEmail: safeEmail,
+    updatedBy: safeUpdatedBy,
+  };
+}
+
 // Fetch current verification record or initialize baseline if missing
 export async function getVerificationRecord(): Promise<VerificationRecord> {
   const docRef = doc(db, 'verification', 'current_status');
   try {
     const snap = await getDoc(docRef);
     if (snap.exists()) {
-      return snap.data() as VerificationRecord;
+      return sanitizeVerificationRecord(snap.data() as VerificationRecord);
     } else {
       // Seed initial unverified state
       await setDoc(docRef, DEFAULT_VERIFICATION_RECORD);
@@ -627,7 +645,7 @@ export function subscribeToVerificationRecord(callback: (record: VerificationRec
     docRef,
     (snap) => {
       if (snap.exists()) {
-        callback(snap.data() as VerificationRecord);
+        callback(sanitizeVerificationRecord(snap.data() as VerificationRecord));
       } else {
         // Initialize if not present
         setDoc(docRef, DEFAULT_VERIFICATION_RECORD).catch(() => {});

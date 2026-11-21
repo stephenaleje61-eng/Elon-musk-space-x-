@@ -63,7 +63,7 @@ export const SECTIONS: SectionMeta[] = [
     shortName: 'Starlink',
     tagline: 'Global Low-Earth Orbit Constellation & Direct-to-Cell Telemetry',
     description: 'World’s largest constellation of highly advanced satellites in low Earth orbit delivering low-latency broadband internet across oceans, flights, and remote wilderness.',
-    heroImage: 'https://images.unsplash.com/photo-1495578942200-c5f5d7af99d3?w=1200',
+    heroImage: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=1200',
     categories: [
       'Satellite internet',
       'Residential internet',

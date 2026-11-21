@@ -1,25 +1,20 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X,
-  Send,
   Lock,
-  User,
-  Clock,
   Download,
-  RefreshCw,
   SlidersHorizontal,
-  ChevronLeft,
+  Check,
   CheckCheck,
   Image as ImageIcon,
-  Paperclip,
   Maximize2,
-  ZoomIn,
   Loader2,
-  Trash2,
   ShieldAlert,
-  ShieldCheck,
   Ban,
   AlertTriangle,
+  AlertCircle,
+  RotateCcw,
+  LogIn,
 } from 'lucide-react';
 import {
   getLocalChatBackup,
@@ -30,11 +25,20 @@ import {
   subscribeToAllAdminConversations,
   exportAllChatsJson,
   toggleBlockConversation,
+  createMessageId,
+  markMessagesAsRead,
 } from '../firebase/chatService';
-import { ensureAnonymousAuth } from '../firebase/auth';
+import {
+  ensureAnonymousAuth,
+  signInWithGoogle,
+  checkIsAdmin,
+  isAuthorizedOwnerEmail,
+  OWNER_FIREBASE_UID,
+} from '../firebase/auth';
 import { Conversation, Message } from '../types';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { signOut } from 'firebase/auth';
+import { auth, db } from '../firebase/config';
 import { compressImageFile } from '../firebase/storage';
 
 interface ChatElonMuskModalProps {
@@ -43,16 +47,30 @@ interface ChatElonMuskModalProps {
   isAdmin?: boolean;
 }
 
+function formatErrorForUser(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes('blocked')) {
+    return 'You have been blocked by the administrator.';
+  }
+  if (msg.includes('Missing or insufficient permissions') || msg.includes('permission-denied')) {
+    return 'Permission denied by Firestore rules. Please retry or refresh.';
+  }
+  if (msg.includes('maximum size') || msg.includes('1048576')) {
+    return 'Image exceeds size limit. Please select a smaller image.';
+  }
+  return 'Message failed to deliver. Please check connection and retry.';
+}
+
 export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   isOpen,
   onClose,
   isAdmin = false,
 }) => {
-  // Mode: 'visitor' (default direct chat) or 'host' (where you see all incoming visitor chats)
+  // Mode: 'visitor' (default direct chat) or 'host' (where website owner sees all incoming visitor chats)
   const [viewMode, setViewMode] = useState<'visitor' | 'host'>('visitor');
   const [hostUnlocked, setHostUnlocked] = useState(isAdmin);
-  const [hostPasscode, setHostPasscode] = useState('');
   const [hostLoginError, setHostLoginError] = useState<string | null>(null);
+  const [hostAuthLoading, setHostAuthLoading] = useState(false);
   const [showHostLogin, setShowHostLogin] = useState(false);
 
   // Visitor Chat State
@@ -60,10 +78,12 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   const [visitorName, setVisitorName] = useState<string>('Visitor');
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [firestoreMessages, setFirestoreMessages] = useState<Message[]>([]);
+  const [localOutboundMessages, setLocalOutboundMessages] = useState<Record<string, Message>>({});
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isVisitorBlocked, setIsVisitorBlocked] = useState(false);
 
   // Visitor Image Attachment State
@@ -72,12 +92,14 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   const [isCompressingVisitorImage, setIsCompressingVisitorImage] = useState(false);
   const visitorFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Host (You) State
+  // Host (Owner) State
   const [allConversations, setAllConversations] = useState<Conversation[]>([]);
   const [selectedVisitorConv, setSelectedVisitorConv] = useState<Conversation | null>(null);
-  const [hostMessages, setHostMessages] = useState<Message[]>([]);
+  const [hostFirestoreMessages, setHostFirestoreMessages] = useState<Message[]>([]);
+  const [hostLocalOutbound, setHostLocalOutbound] = useState<Record<string, Message>>({});
   const [hostReplyText, setHostReplyText] = useState('');
   const [isHostSending, setIsHostSending] = useState(false);
+  const [hostSendError, setHostSendError] = useState<string | null>(null);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [hostBlockConfirmDialog, setHostBlockConfirmDialog] = useState<{
     isOpen: boolean;
@@ -102,19 +124,43 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hostMessagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize Visitor State
+  // Merge Firestore messages with optimistic sending/failed local messages (deduplicated by ID)
+  const messages = useMemo(() => {
+    const confirmedIds = new Set(firestoreMessages.map((m) => m.id));
+    const pendingOrFailed = Object.values(localOutboundMessages).filter(
+      (m) => !confirmedIds.has(m.id)
+    );
+    return [...firestoreMessages, ...pendingOrFailed].sort((a, b) =>
+      (a.createdAt || '').localeCompare(b.createdAt || '')
+    );
+  }, [firestoreMessages, localOutboundMessages]);
+
+  const hostMessages = useMemo(() => {
+    const confirmedIds = new Set(hostFirestoreMessages.map((m) => m.id));
+    const pendingOrFailed = Object.values(hostLocalOutbound).filter(
+      (m) => !confirmedIds.has(m.id)
+    );
+    return [...hostFirestoreMessages, ...pendingOrFailed].sort((a, b) =>
+      (a.createdAt || '').localeCompare(b.createdAt || '')
+    );
+  }, [hostFirestoreMessages, hostLocalOutbound]);
+
+  // Initialize Visitor State & Real-Time Firestore Listeners
   useEffect(() => {
     if (!isOpen) return;
 
     let unsubConv: (() => void) | undefined;
     let unsubMsgs: (() => void) | undefined;
+    let active = true;
 
     async function initVisitorChat() {
+      setConnectionError(null);
       try {
         const user = await ensureAnonymousAuth();
+        if (!active) return;
+
         setVisitorId(user.uid);
 
-        // Check local recovery backup
         const backup = getLocalChatBackup();
         const initialName = backup.visitorName || `Visitor #${user.uid.slice(0, 4).toUpperCase()}`;
         setVisitorName(initialName);
@@ -127,43 +173,81 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
         const convSnap = await getDoc(convRef);
         if (!convSnap.exists()) {
           const now = new Date().toISOString();
-          await setDoc(convRef, {
-            id: convId,
-            visitorId: user.uid,
-            visitorName: initialName,
-            status: 'accepted',
-            submittedAt: now,
-            lastMessageText: '',
-            lastMessageTime: now,
-            unreadAdminCount: 0,
-            unreadVisitorCount: 0,
-            createdAt: now,
-            updatedAt: now,
-          });
+          await setDoc(
+            convRef,
+            {
+              id: convId,
+              visitorId: user.uid,
+              visitorName: initialName,
+              status: 'accepted',
+              isBlocked: false,
+              submittedAt: now,
+              lastMessageText: '',
+              lastMessageTime: now,
+              unreadAdminCount: 0,
+              unreadVisitorCount: 0,
+              createdAt: now,
+              updatedAt: now,
+            },
+            { merge: true }
+          );
         }
 
-        // Subscribe to real-time messages directly
-        unsubMsgs = subscribeToRealMessages(convId, (realMsgs) => {
-          setMessages(realMsgs);
-        });
+        if (!active) return;
+
+        // Subscribe to real-time messages directly from Firestore
+        unsubMsgs = subscribeToRealMessages(
+          convId,
+          (realMsgs) => {
+            setFirestoreMessages(realMsgs);
+            // Clear confirmed messages from local pending map
+            setLocalOutboundMessages((prev) => {
+              const next = { ...prev };
+              let changed = false;
+              for (const m of realMsgs) {
+                if (next[m.id]) {
+                  delete next[m.id];
+                  changed = true;
+                }
+              }
+              return changed ? next : prev;
+            });
+          },
+          (err) => {
+            console.error('Visitor real-time messages listener failed:', err);
+            setConnectionError('Unable to sync messages with Firebase: ' + err.message);
+          }
+        );
 
         // Subscribe to conversation metadata
-        unsubConv = subscribeToVisitorConversation(convId, (conv) => {
-          if (conv) {
-            setIsVisitorBlocked(!!conv.isBlocked);
-            if (conv.visitorName && conv.visitorName !== visitorName) {
-              setVisitorName(conv.visitorName);
+        unsubConv = subscribeToVisitorConversation(
+          convId,
+          (conv) => {
+            if (conv) {
+              setIsVisitorBlocked(!!conv.isBlocked);
+              if (conv.visitorName) {
+                setVisitorName(conv.visitorName);
+              }
+              if ((conv.unreadVisitorCount ?? 0) > 0) {
+                markMessagesAsRead(convId, 'visitor');
+              }
             }
+          },
+          (err) => {
+            console.error('Visitor conversation listener failed:', err);
           }
-        });
+        );
       } catch (err) {
         console.error('Failed to initialize direct private chat:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        setConnectionError(`Chat initialization failed: ${msg}`);
       }
     }
 
     initVisitorChat();
 
     return () => {
+      active = false;
       if (unsubConv) unsubConv();
       if (unsubMsgs) unsubMsgs();
     };
@@ -180,9 +264,21 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   useEffect(() => {
     if (!isOpen || viewMode !== 'host' || !hostUnlocked) return;
 
-    const unsubAll = subscribeToAllAdminConversations((convs) => {
-      setAllConversations(convs);
-    });
+    const unsubAll = subscribeToAllAdminConversations(
+      (convs) => {
+        setAllConversations(convs);
+        if (selectedVisitorConv) {
+          const refreshed = convs.find((c) => c.id === selectedVisitorConv.id);
+          if (refreshed) {
+            setSelectedVisitorConv(refreshed);
+          }
+        }
+      },
+      (err) => {
+        console.error('Host conversations listener failed:', err);
+        setHostSendError('Failed to load conversations: ' + err.message);
+      }
+    );
 
     return () => {
       unsubAll();
@@ -192,20 +288,39 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
   // Host Real-Time Messages Listener for Selected Visitor
   useEffect(() => {
     if (!selectedVisitorConv) return;
-    const unsub = subscribeToRealMessages(selectedVisitorConv.id, (msgs) => {
-      setHostMessages(msgs);
-    });
+    markMessagesAsRead(selectedVisitorConv.id, 'admin');
+    const unsub = subscribeToRealMessages(
+      selectedVisitorConv.id,
+      (msgs) => {
+        setHostFirestoreMessages(msgs);
+        setHostLocalOutbound((prev) => {
+          const next = { ...prev };
+          let changed = false;
+          for (const m of msgs) {
+            if (next[m.id]) {
+              delete next[m.id];
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      },
+      (err) => {
+        console.error('Host messages listener failed:', err);
+        setHostSendError('Failed to load thread messages: ' + err.message);
+      }
+    );
     return () => unsub();
-  }, [selectedVisitorConv]);
+  }, [selectedVisitorConv?.id]);
 
   // Auto-scroll on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, visitorImage]);
+  }, [messages.length, visitorImage]);
 
   useEffect(() => {
     hostMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [hostMessages, hostImage]);
+  }, [hostMessages.length, hostImage]);
 
   // Image File Selection Handler
   const handleImageFileSelect = async (
@@ -218,6 +333,8 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
     if (!file.type.startsWith('image/')) {
       if (mode === 'visitor') {
         setSendError('Please select a valid image file (PNG, JPG, WebP, GIF).');
+      } else {
+        setHostSendError('Please select a valid image file (PNG, JPG, WebP, GIF).');
       }
       return;
     }
@@ -227,10 +344,11 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
       setSendError(null);
     } else {
       setIsCompressingHostImage(true);
+      setHostSendError(null);
     }
 
     try {
-      const compressed = await compressImageFile(file, 1200, 0.82);
+      const compressed = await compressImageFile(file, 1080, 0.8);
       if (mode === 'visitor') {
         setVisitorImage(compressed);
         setVisitorImageName(file.name);
@@ -242,6 +360,8 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
       console.error('Image compression error:', err);
       if (mode === 'visitor') {
         setSendError('Failed to prepare image for sending. Please try another image.');
+      } else {
+        setHostSendError('Failed to prepare image for sending.');
       }
     } finally {
       if (mode === 'visitor') {
@@ -273,7 +393,7 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
             setIsCompressingHostImage(true);
           }
           try {
-            const compressed = await compressImageFile(file, 1200, 0.82);
+            const compressed = await compressImageFile(file, 1080, 0.8);
             if (mode === 'visitor') {
               setVisitorImage(compressed);
               setVisitorImageName('Pasted snapshot');
@@ -296,21 +416,34 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
     }
   };
 
-  // Visitor: Send Real Message (Text, Image, or both)
-  const handleVisitorSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isVisitorBlocked || (!inputMessage.trim() && !visitorImage) || !visitorId || isSending) return;
+  // Transmit message with explicit messageId for idempotent retries
+  const transmitVisitorMessage = async (
+    messageId: string,
+    convId: string,
+    text: string,
+    imageToSend?: string
+  ) => {
+    const now = new Date().toISOString();
+    const pendingMsg: Message = {
+      id: messageId,
+      conversationId: convId,
+      from: 'visitor',
+      senderId: visitorId,
+      senderName: visitorName,
+      text,
+      time: now,
+      real: true,
+      createdAt: now,
+      deliveryStatus: 'sending',
+      ...(imageToSend ? { imageUrl: imageToSend } : {}),
+    };
 
-    const text = inputMessage.trim();
-    const imageToSend = visitorImage;
-
-    setInputMessage('');
-    setVisitorImage(null);
-    setVisitorImageName(null);
+    setLocalOutboundMessages((prev) => ({
+      ...prev,
+      [messageId]: pendingMsg,
+    }));
     setIsSending(true);
     setSendError(null);
-
-    const convId = `conv_${visitorId}`;
 
     try {
       await sendRealHumanMessage(
@@ -319,23 +452,141 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
         visitorId,
         visitorName,
         text,
-        imageToSend || undefined
+        imageToSend,
+        undefined,
+        messageId
       );
-      // Update local storage backup
+
+      // Update local state to 'sent' until Firestore snapshot marks it 'delivered'
+      setLocalOutboundMessages((prev) => {
+        if (!prev[messageId]) return prev;
+        return {
+          ...prev,
+          [messageId]: {
+            ...prev[messageId],
+            deliveryStatus: 'sent',
+            errorReason: undefined,
+          },
+        };
+      });
+
       updateLocalChatBackup({
         visitorId,
         visitorName,
         conversationId: convId,
       });
     } catch (err) {
-      console.error('Failed to send message:', err);
-      setSendError('Message failed to deliver. Please check connection and retry.');
-      setInputMessage(text);
-      if (imageToSend) {
-        setVisitorImage(imageToSend);
-      }
+      console.error('Firebase visitor message delivery failure:', err);
+      const userErr = formatErrorForUser(err);
+      setSendError(userErr);
+      setLocalOutboundMessages((prev) => ({
+        ...prev,
+        [messageId]: {
+          ...pendingMsg,
+          deliveryStatus: 'failed',
+          errorReason: userErr,
+        },
+      }));
     } finally {
       setIsSending(false);
+    }
+  };
+
+  // Visitor: Send Real Message (Text, Image, or both)
+  const handleVisitorSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isVisitorBlocked || (!inputMessage.trim() && !visitorImage) || !visitorId || isSending) return;
+
+    const text = inputMessage.trim();
+    const imageToSend = visitorImage || undefined;
+    const convId = `conv_${visitorId}`;
+    const messageId = createMessageId();
+
+    setInputMessage('');
+    setVisitorImage(null);
+    setVisitorImageName(null);
+
+    await transmitVisitorMessage(messageId, convId, text, imageToSend);
+  };
+
+  // Visitor: Idempotent Retry of a specific failed message (never duplicates)
+  const handleRetryVisitorMessage = async (failedMsg: Message) => {
+    if (isSending || isVisitorBlocked) return;
+    await transmitVisitorMessage(
+      failedMsg.id,
+      failedMsg.conversationId,
+      failedMsg.text,
+      failedMsg.imageUrl
+    );
+  };
+
+  // Host: Transmit reply with explicit messageId for idempotent retries
+  const transmitHostReply = async (
+    messageId: string,
+    convId: string,
+    text: string,
+    imageToSend?: string
+  ) => {
+    const now = new Date().toISOString();
+    const senderUid = auth.currentUser?.uid || visitorId || 'admin';
+    const pendingMsg: Message = {
+      id: messageId,
+      conversationId: convId,
+      from: 'admin',
+      senderId: senderUid,
+      senderName: 'Elon Musk',
+      text,
+      time: now,
+      real: true,
+      createdAt: now,
+      deliveryStatus: 'sending',
+      ...(imageToSend ? { imageUrl: imageToSend } : {}),
+    };
+
+    setHostLocalOutbound((prev) => ({
+      ...prev,
+      [messageId]: pendingMsg,
+    }));
+    setIsHostSending(true);
+    setHostSendError(null);
+
+    try {
+      await sendRealHumanMessage(
+        convId,
+        'admin',
+        senderUid,
+        'Elon Musk',
+        text,
+        imageToSend,
+        undefined,
+        messageId
+      );
+
+      setHostLocalOutbound((prev) => {
+        if (!prev[messageId]) return prev;
+        return {
+          ...prev,
+          [messageId]: {
+            ...prev[messageId],
+            deliveryStatus: 'sent',
+            errorReason: undefined,
+          },
+        };
+      });
+    } catch (err) {
+      console.error('Firebase host reply delivery failure:', err);
+      const userErr = formatErrorForUser(err);
+      setHostSendError(userErr);
+      setHostLocalOutbound((prev) => ({
+        ...prev,
+        [messageId]: {
+          ...pendingMsg,
+          deliveryStatus: 'failed',
+          errorReason: userErr,
+        },
+      }));
+    } finally {
+      setIsHostSending(false);
     }
   };
 
@@ -345,31 +596,25 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
     if ((!hostReplyText.trim() && !hostImage) || !selectedVisitorConv || isHostSending) return;
 
     const text = hostReplyText.trim();
-    const imageToSend = hostImage;
+    const imageToSend = hostImage || undefined;
+    const messageId = createMessageId();
 
     setHostReplyText('');
     setHostImage(null);
     setHostImageName(null);
-    setIsHostSending(true);
 
-    try {
-      await sendRealHumanMessage(
-        selectedVisitorConv.id,
-        'admin',
-        visitorId || 'admin',
-        'Elon Musk',
-        text,
-        imageToSend || undefined
-      );
-    } catch (err) {
-      console.error('Host reply failed:', err);
-      setHostReplyText(text);
-      if (imageToSend) {
-        setHostImage(imageToSend);
-      }
-    } finally {
-      setIsHostSending(false);
-    }
+    await transmitHostReply(messageId, selectedVisitorConv.id, text, imageToSend);
+  };
+
+  // Host: Retry failed reply without creating duplicates
+  const handleRetryHostMessage = async (failedMsg: Message) => {
+    if (isHostSending) return;
+    await transmitHostReply(
+      failedMsg.id,
+      failedMsg.conversationId,
+      failedMsg.text,
+      failedMsg.imageUrl
+    );
   };
 
   // Host: Toggle Block status with confirmation
@@ -379,13 +624,16 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
     const shouldBlock = action === 'block';
     try {
       await toggleBlockConversation(conversation.id, shouldBlock);
-      setSelectedVisitorConv((prev) => (prev && prev.id === conversation.id ? { ...prev, isBlocked: shouldBlock } : prev));
+      setSelectedVisitorConv((prev) =>
+        prev && prev.id === conversation.id ? { ...prev, isBlocked: shouldBlock } : prev
+      );
       setAllConversations((prev) =>
         prev.map((c) => (c.id === conversation.id ? { ...c, isBlocked: shouldBlock } : c))
       );
       setHostBlockConfirmDialog(null);
     } catch (err) {
       console.error('Failed to update block status in host view:', err);
+      setHostSendError('Failed to update block status. Ensure owner session is active.');
     }
   };
 
@@ -402,47 +650,76 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
           { visitorName: tempName.trim(), updatedAt: new Date().toISOString() },
           { merge: true }
         );
-      } catch {
-        // silent
+      } catch (err) {
+        console.warn('Could not update visitor name in Firestore:', err);
       }
     }
   };
 
-  // Host Login with Passcode
-  const handleHostLogin = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Host Login via Genuine Google Owner Authentication (no insecure local passcodes)
+  const handleHostGoogleLogin = async () => {
+    setHostAuthLoading(true);
     setHostLoginError(null);
-    if (hostPasscode.trim() === 'elon2026' || hostPasscode.trim() === 'admin') {
-      setHostUnlocked(true);
-      setShowHostLogin(false);
-      setViewMode('host');
-      setHostPasscode('');
-    } else {
-      setHostLoginError('Invalid host security key. Access denied.');
+    try {
+      const user = await signInWithGoogle();
+      const authorized =
+        (await checkIsAdmin(user)) ||
+        isAuthorizedOwnerEmail(user.email) ||
+        user.uid === OWNER_FIREBASE_UID;
+
+      if (authorized) {
+        setHostUnlocked(true);
+        setShowHostLogin(false);
+        setViewMode('host');
+      } else {
+        await signOut(auth);
+        setHostLoginError(
+          `Access Denied: "${user.email || user.uid}" is not the authorized website owner.`
+        );
+      }
+    } catch (err: unknown) {
+      console.error('Host Google Sign-In error:', err);
+      const fbErr = err as { code?: string; message?: string };
+      if (fbErr?.code === 'auth/popup-blocked') {
+        setHostLoginError('Popup blocked by browser. Please allow popups and try again.');
+      } else if (fbErr?.code === 'auth/popup-closed-by-user') {
+        setHostLoginError('Sign-in cancelled before completion.');
+      } else {
+        setHostLoginError(fbErr?.message || 'Google authentication failed.');
+      }
+    } finally {
+      setHostAuthLoading(false);
     }
   };
 
   // Export JSON backup
   const handleExportChats = async () => {
-    const jsonStr = await exportAllChatsJson();
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `elon_private_chats_backup_${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setExportNotice('Export complete: Downloaded JSON archive.');
-    setTimeout(() => setExportNotice(null), 3000);
+    try {
+      const jsonStr = await exportAllChatsJson();
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `elon_private_chats_backup_${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportNotice('Export complete: Downloaded JSON archive.');
+      setTimeout(() => setExportNotice(null), 3000);
+    } catch (err) {
+      console.error('Export failed:', err);
+      setExportNotice('Export failed: Permission denied or network issue.');
+      setTimeout(() => setExportNotice(null), 3000);
+    }
   };
 
   if (!isOpen) return null;
+
+  const failedVisitorMessages = messages.filter((m) => m.deliveryStatus === 'failed');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md">
       {/* Strict Monochrome Black & White Window */}
       <div className="relative w-full max-w-2xl h-[92vh] sm:h-[700px] bg-black text-white border border-zinc-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden font-sans">
-        
         {/* Header Bar */}
         <div className="px-5 py-3.5 bg-black border-b border-zinc-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -459,14 +736,14 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                 </span>
               </div>
               <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                <span>Live Encrypted Direct Chat & Media</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Live Firestore Real-Time Chat & Media</span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Host Inbox Switcher for You */}
+            {/* Host Inbox Switcher for Authorized Website Owner */}
             {hostUnlocked ? (
               <div className="flex bg-zinc-900 p-0.5 rounded-lg border border-zinc-800 text-xs">
                 <button
@@ -497,7 +774,7 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                   setShowHostLogin(true);
                 }}
                 className="p-1.5 text-zinc-500 hover:text-white rounded-lg transition-colors cursor-pointer"
-                title="Host Login"
+                title="Owner Inbox Sign-In"
               >
                 <SlidersHorizontal className="w-4 h-4" />
               </button>
@@ -549,9 +826,15 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
 
               <div className="text-[11px] text-zinc-500 font-mono flex items-center gap-1">
                 <Lock className="w-3 h-3 text-zinc-500" />
-                <span>1-on-1 Encrypted</span>
+                <span>Persistent Thread</span>
               </div>
             </div>
+
+            {connectionError && (
+              <div className="px-4 py-2 bg-rose-950/80 border-b border-rose-800 text-rose-200 text-xs font-mono">
+                {connectionError}
+              </div>
+            )}
 
             {/* Direct Message Stream */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-black">
@@ -561,29 +844,56 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                     EM
                   </div>
                   <strong className="text-white block mb-1 text-sm">Direct Line to Elon Musk</strong>
-                  Type your message or share an image below. All messages and photos are delivered in real time.
+                  Type your message or share an image below. All messages and photos are saved and delivered in real time.
                 </div>
               ) : (
                 messages.map((m) => {
                   const isMe = m.from === 'visitor';
-                  const formattedTime = new Date(m.time).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  });
+                  const formattedTime = m.time
+                    ? new Date(m.time).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '';
+                  const isFailed = m.deliveryStatus === 'failed';
 
                   return (
                     <div
                       key={m.id}
                       className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
                     >
-                      <div className="text-[10px] text-zinc-500 mb-1 px-1 font-mono">
-                        {isMe ? visitorName : 'Elon Musk'} · {formattedTime}
+                      <div className="text-[10px] text-zinc-500 mb-1 px-1 font-mono flex items-center gap-1.5">
+                        <span>{isMe ? visitorName : 'Elon Musk'}</span>
+                        <span>·</span>
+                        <span>{formattedTime}</span>
+                        {isMe && m.deliveryStatus === 'sending' && (
+                          <span className="inline-flex items-center gap-1 text-zinc-400">
+                            <Loader2 className="w-3 h-3 animate-spin" /> Sending
+                          </span>
+                        )}
+                        {isMe && m.deliveryStatus === 'sent' && (
+                          <span className="inline-flex items-center gap-0.5 text-zinc-400">
+                            <Check className="w-3 h-3" /> Sent
+                          </span>
+                        )}
+                        {isMe && (!m.deliveryStatus || m.deliveryStatus === 'delivered') && (
+                          <span className="inline-flex items-center gap-0.5 text-emerald-400">
+                            <CheckCheck className="w-3 h-3" /> Delivered
+                          </span>
+                        )}
+                        {isMe && isFailed && (
+                          <span className="inline-flex items-center gap-0.5 text-rose-400 font-bold">
+                            <AlertCircle className="w-3 h-3" /> Failed
+                          </span>
+                        )}
                       </div>
 
                       <div
                         className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-3 text-xs sm:text-sm leading-relaxed ${
                           isMe
-                            ? 'bg-zinc-900 text-white border border-zinc-800 rounded-tr-none'
+                            ? isFailed
+                              ? 'bg-rose-950/70 text-white border border-rose-700 rounded-tr-none'
+                              : 'bg-zinc-900 text-white border border-zinc-800 rounded-tr-none'
                             : 'bg-white text-black font-medium rounded-tl-none'
                         }`}
                       >
@@ -614,6 +924,21 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                         )}
 
                         {m.text && <p className="whitespace-pre-wrap break-words px-1">{m.text}</p>}
+
+                        {isMe && isFailed && (
+                          <div className="mt-2 pt-2 border-t border-rose-800/70 flex items-center justify-between gap-3 text-[11px] font-mono text-rose-200">
+                            <span>{m.errorReason || 'Not delivered'}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRetryVisitorMessage(m)}
+                              disabled={isSending}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-white text-black font-bold rounded-md hover:bg-zinc-200 cursor-pointer shrink-0 disabled:opacity-50"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Retry</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -623,13 +948,30 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Error notice if send fails */}
-            {sendError && (
-              <div className="px-4 py-2 bg-zinc-900 text-white text-xs border-t border-zinc-800 flex items-center justify-between">
+            {/* Banner if a failed message exists */}
+            {sendError && failedVisitorMessages.length > 0 && (
+              <div className="px-4 py-2 bg-zinc-900 text-rose-200 text-xs border-t border-zinc-800 flex items-center justify-between">
                 <span>{sendError}</span>
-                <button onClick={handleVisitorSend} className="underline font-bold ml-2 cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleRetryVisitorMessage(failedVisitorMessages[failedVisitorMessages.length - 1])
+                  }
+                  disabled={isSending}
+                  className="underline font-bold text-white ml-2 cursor-pointer shrink-0"
+                >
                   Retry
                 </button>
+              </div>
+            )}
+
+            {/* Blocked Notification for Visitor */}
+            {isVisitorBlocked && (
+              <div className="px-4 py-2.5 bg-red-950/80 border-t border-red-800 text-red-200 text-xs font-mono flex items-center gap-2 shrink-0">
+                <Ban className="w-4 h-4 text-red-400 shrink-0" />
+                <span>
+                  <strong>CONVERSATION BLOCKED:</strong> You have been blocked by the administrator. New messages cannot be sent.
+                </span>
               </div>
             )}
 
@@ -672,7 +1014,6 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
               onSubmit={handleVisitorSend}
               className="p-3 bg-black border-t border-zinc-800 flex items-center gap-2 shrink-0"
             >
-              {/* Hidden file input */}
               <input
                 type="file"
                 ref={visitorFileInputRef}
@@ -680,16 +1021,6 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                 accept="image/png,image/jpeg,image/webp,image/gif"
                 className="hidden"
               />
-
-              {/* Blocked Notification for Visitor */}
-              {isVisitorBlocked && (
-                <div className="px-4 py-2.5 bg-red-950/80 border-t border-red-800 text-red-200 text-xs font-mono flex items-center gap-2 shrink-0">
-                  <Ban className="w-4 h-4 text-red-400 shrink-0" />
-                  <span>
-                    <strong>CONVERSATION BLOCKED:</strong> You have been blocked by the administrator. New messages cannot be sent.
-                  </span>
-                </div>
-              )}
 
               {/* Attach Image Button */}
               <button
@@ -703,7 +1034,7 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                     ? 'bg-white text-black font-bold'
                     : 'bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800'
                 }`}
-                title={isVisitorBlocked ? "Blocked by administrator" : "Send image or photo (PNG, JPG, WebP)"}
+                title={isVisitorBlocked ? 'Blocked by administrator' : 'Send image or photo (PNG, JPG, WebP)'}
               >
                 {isCompressingVisitorImage ? (
                   <Loader2 className="w-4 h-4 animate-spin text-white" />
@@ -720,10 +1051,10 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                 onPaste={(e) => !isVisitorBlocked && handlePasteImage(e, 'visitor')}
                 placeholder={
                   isVisitorBlocked
-                    ? "This private line is currently blocked by administrator..."
+                    ? 'This private line is currently blocked by administrator...'
                     : visitorImage
-                    ? "Add an optional caption..."
-                    : "Type your message or paste an image..."
+                    ? 'Add an optional caption...'
+                    : 'Type your message or paste an image...'
                 }
                 className="flex-1 px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-white text-xs sm:text-sm focus:outline-none focus:border-white transition-colors placeholder:text-zinc-500 disabled:opacity-40 disabled:cursor-not-allowed"
               />
@@ -746,11 +1077,11 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
           </div>
         )}
 
-        {/* ------------------- HOST VIEW (FOR YOU TO CHAT WITH VISITORS) ------------------- */}
+        {/* ------------------- HOST VIEW (FOR OWNER TO CHAT WITH VISITORS) ------------------- */}
         {viewMode === 'host' && hostUnlocked && (
           <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-black">
             {/* Left: Visitor Conversations List */}
-            <div className="w-full md:w-64 border-r border-zinc-800 flex flex-col overflow-hidden shrink-0 bg-zinc-950">
+            <div className="w-full md:w-64 border-r border-zinc-800 flex flex-col overflow-hidden shrink-0 bg-zinc-950 max-h-48 md:max-h-full">
               <div className="p-3.5 border-b border-zinc-800 flex items-center justify-between text-xs font-mono">
                 <span className="font-extrabold text-white">Visitors ({allConversations.length})</span>
                 <button
@@ -776,6 +1107,12 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                 ) : (
                   allConversations.map((c) => {
                     const isSelected = selectedVisitorConv?.id === c.id;
+                    const updatedStr = c.updatedAt
+                      ? new Date(c.updatedAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : '';
                     return (
                       <div
                         key={c.id}
@@ -788,12 +1125,7 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                       >
                         <div className="flex items-center justify-between text-xs mb-1">
                           <span className="truncate">{c.visitorName || 'Visitor'}</span>
-                          <span className="text-[10px] font-mono text-zinc-500">
-                            {new Date(c.updatedAt).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
+                          <span className="text-[10px] font-mono text-zinc-500">{updatedStr}</span>
                         </div>
                         <div className="text-[11px] text-zinc-500 truncate">
                           {c.lastMessageText || 'Opened chat'}
@@ -815,7 +1147,9 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                       <span className="font-extrabold text-white text-sm">
                         {selectedVisitorConv.visitorName || 'Visitor'}
                       </span>
-                      <span className="text-zinc-500 hidden sm:inline">ID: {selectedVisitorConv.visitorId.slice(0, 10)}...</span>
+                      <span className="text-zinc-500 hidden sm:inline">
+                        ID: {(selectedVisitorConv.visitorId || '').slice(0, 10)}...
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       {selectedVisitorConv.isBlocked ? (
@@ -860,32 +1194,58 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Messages Stream: Visitor on Left, You (Host) on Right */}
+                  {/* Messages Stream */}
                   <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-black">
                     {hostMessages.map((m) => {
                       const isHost = m.from === 'admin';
-                      const formattedTime = new Date(m.time).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      });
+                      const formattedTime = m.time
+                        ? new Date(m.time).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '';
+                      const isFailed = m.deliveryStatus === 'failed';
 
                       return (
                         <div
                           key={m.id}
                           className={`flex flex-col ${isHost ? 'items-end' : 'items-start'}`}
                         >
-                          <div className="text-[10px] text-zinc-500 mb-1 px-1 font-mono">
-                            {isHost ? 'You (Elon Musk)' : selectedVisitorConv.visitorName} · {formattedTime}
+                          <div className="text-[10px] text-zinc-500 mb-1 px-1 font-mono flex items-center gap-1.5">
+                            <span>{isHost ? 'You (Elon Musk)' : selectedVisitorConv.visitorName}</span>
+                            <span>·</span>
+                            <span>{formattedTime}</span>
+                            {isHost && m.deliveryStatus === 'sending' && (
+                              <span className="inline-flex items-center gap-1 text-zinc-400">
+                                <Loader2 className="w-3 h-3 animate-spin" /> Sending
+                              </span>
+                            )}
+                            {isHost && m.deliveryStatus === 'sent' && (
+                              <span className="inline-flex items-center gap-0.5 text-zinc-400">
+                                <Check className="w-3 h-3" /> Sent
+                              </span>
+                            )}
+                            {isHost && (!m.deliveryStatus || m.deliveryStatus === 'delivered') && (
+                              <span className="inline-flex items-center gap-0.5 text-emerald-400">
+                                <CheckCheck className="w-3 h-3" /> Delivered
+                              </span>
+                            )}
+                            {isHost && isFailed && (
+                              <span className="inline-flex items-center gap-0.5 text-rose-400 font-bold">
+                                <AlertCircle className="w-3 h-3" /> Failed
+                              </span>
+                            )}
                           </div>
 
                           <div
                             className={`max-w-[80%] rounded-2xl p-3 text-xs sm:text-sm leading-relaxed ${
                               isHost
-                                ? 'bg-white text-black font-medium rounded-tr-none'
+                                ? isFailed
+                                  ? 'bg-rose-950/70 text-white border border-rose-700 rounded-tr-none'
+                                  : 'bg-white text-black font-medium rounded-tr-none'
                                 : 'bg-zinc-900 text-white border border-zinc-800 rounded-tl-none'
                             }`}
                           >
-                            {/* Render Image in Host View */}
                             {m.imageUrl && (
                               <div
                                 onClick={() =>
@@ -912,6 +1272,21 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                             )}
 
                             {m.text && <p className="whitespace-pre-wrap break-words px-1">{m.text}</p>}
+
+                            {isHost && isFailed && (
+                              <div className="mt-2 pt-2 border-t border-rose-800/70 flex items-center justify-between gap-3 text-[11px] font-mono text-rose-200">
+                                <span>{m.errorReason || 'Not delivered'}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRetryHostMessage(m)}
+                                  disabled={isHostSending}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-white text-black font-bold rounded-md hover:bg-zinc-200 cursor-pointer shrink-0 disabled:opacity-50"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Retry</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -919,6 +1294,12 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
 
                     <div ref={hostMessagesEndRef} />
                   </div>
+
+                  {hostSendError && (
+                    <div className="px-4 py-2 bg-rose-950/70 text-rose-200 text-xs border-t border-rose-800">
+                      {hostSendError}
+                    </div>
+                  )}
 
                   {/* Attached Image Preview for Host */}
                   {hostImage && (
@@ -995,7 +1376,7 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                       disabled={(!hostReplyText.trim() && !hostImage) || isHostSending || isCompressingHostImage}
                       className="px-5 py-2.5 bg-white hover:bg-zinc-200 active:bg-zinc-300 text-black font-extrabold text-xs sm:text-sm rounded-xl transition-all cursor-pointer disabled:opacity-40 shrink-0"
                     >
-                      SEND
+                      {isHostSending ? 'SENDING...' : 'SEND'}
                     </button>
                   </form>
                 </>
@@ -1008,12 +1389,12 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
           </div>
         )}
 
-        {/* Host Login Modal Overlay */}
+        {/* Host Login Modal Overlay (Secured by Google Firebase Auth) */}
         {showHostLogin && (
           <div className="absolute inset-0 bg-black/95 backdrop-blur-md p-6 flex flex-col justify-center items-center z-30">
             <div className="max-w-sm w-full bg-zinc-950 border border-zinc-800 p-6 rounded-2xl">
               <div className="flex items-center justify-between mb-4">
-                <h4 className="text-sm font-extrabold text-white">Host Access</h4>
+                <h4 className="text-sm font-extrabold text-white">Owner Inbox Access</h4>
                 <button
                   onClick={() => setShowHostLogin(false)}
                   className="p-1 text-zinc-400 hover:text-white cursor-pointer"
@@ -1022,8 +1403,8 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                 </button>
               </div>
 
-              <p className="text-xs text-zinc-400 mb-4">
-                Enter host security key to manage and reply to all visitor messages.
+              <p className="text-xs text-zinc-400 mb-4 leading-relaxed">
+                Sign in with the authorized website owner Google account to view and reply to all visitor messages.
               </p>
 
               {hostLoginError && (
@@ -1032,25 +1413,15 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                 </div>
               )}
 
-              <form onSubmit={handleHostLogin} className="space-y-3">
-                <input
-                  type="password"
-                  placeholder="Security key..."
-                  value={hostPasscode}
-                  onChange={(e) => {
-                    setHostPasscode(e.target.value);
-                    if (hostLoginError) setHostLoginError(null);
-                  }}
-                  className="w-full px-3.5 py-2 text-xs bg-zinc-900 border border-zinc-700 rounded-xl text-white focus:outline-none focus:border-white font-mono"
-                  autoFocus
-                />
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-white text-black font-extrabold text-xs rounded-xl hover:bg-zinc-200 cursor-pointer"
-                >
-                  Open Host Inbox
-                </button>
-              </form>
+              <button
+                type="button"
+                onClick={handleHostGoogleLogin}
+                disabled={hostAuthLoading}
+                className="w-full py-3 bg-white text-black font-extrabold text-xs rounded-xl hover:bg-zinc-200 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>{hostAuthLoading ? 'Verifying with Google...' : 'Sign In as Website Owner'}</span>
+              </button>
             </div>
           </div>
         )}
@@ -1077,7 +1448,7 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
                   </h4>
                   <p className="text-xs text-zinc-400 font-mono">
                     {hostBlockConfirmDialog.conversation.visitorName || 'Visitor'} (
-                    {hostBlockConfirmDialog.conversation.visitorId.slice(0, 10)}...)
+                    {(hostBlockConfirmDialog.conversation.visitorId || '').slice(0, 10)}...)
                   </p>
                 </div>
               </div>
@@ -1160,7 +1531,6 @@ export const ChatElonMuskModal: React.FC<ChatElonMuskModalProps> = ({
             )}
           </div>
         )}
-
       </div>
     </div>
   );

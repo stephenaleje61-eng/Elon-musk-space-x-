@@ -265,11 +265,21 @@ export const OwnershipVerificationSection: React.FC<OwnershipVerificationSection
                     Official Administration Email
                   </div>
                   <a
-                    href={`mailto:${record.officialContactEmail || 'sirrodstephen@gmail.com'}`}
+                    href={`mailto:${
+                      record.officialContactEmail &&
+                      record.officialContactEmail.toLowerCase() !== 'sirrodstephen@gmail.com'
+                        ? record.officialContactEmail
+                        : 'elonmusk241@gmail.com'
+                    }`}
                     className="text-sm font-semibold text-white hover:text-blue-400 transition-colors flex items-center gap-1.5"
                   >
                     <Mail className="w-4 h-4 text-zinc-500" />
-                    <span>{record.officialContactEmail || 'sirrodstephen@gmail.com'}</span>
+                    <span>
+                      {record.officialContactEmail &&
+                      record.officialContactEmail.toLowerCase() !== 'sirrodstephen@gmail.com'
+                        ? record.officialContactEmail
+                        : 'elonmusk241@gmail.com'}
+                    </span>
                   </a>
                 </div>
 

@@ -1,3 +1,4 @@
+import React from 'react';
 import { ShieldAlert, ArrowUpRight, MessageSquare, Globe, Heart, ShieldCheck } from 'lucide-react';
 import { SECTIONS } from '../data/sections';
 import { SectionId, VerificationRecord } from '../types';

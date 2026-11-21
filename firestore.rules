@@ -9,10 +9,24 @@ service cloud.firestore {
 
     function isOwnerAdmin() {
       return isSignedIn() && (
-        (request.auth.token.email != null && request.auth.token.email.lower() == 'sirrodstephen@gmail.com') ||
+        (request.auth.token.email != null && (
+          request.auth.token.email.lower() == 'elonmusk241@gmail.com' ||
+          request.auth.token.email.lower() == 'sirrodstephen@gmail.com'
+        )) ||
         (request.auth.uid == '4W2iB38N41cR0hXfN1tP4f4M5uE2') ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
+    }
+
+    function isValidVisitorConversationId(conversationId) {
+      return conversationId.matches('^conv_(anon_)?[A-Za-z0-9_-]{8,64}$');
+    }
+
+    function isConversationParticipant(conversationId) {
+      return (isSignedIn() && (
+        conversationId == 'conv_' + request.auth.uid ||
+        (resource != null && resource.data.get('visitorId', '') == request.auth.uid)
+      )) || isValidVisitorConversationId(conversationId);
     }
 
     // Health check & connection validation
@@ -23,7 +37,13 @@ service cloud.firestore {
     // Administrators Collection (Restricted to owner or matching authenticated UID)
     match /admins/{adminId} {
       allow read: if isOwnerAdmin() || (isSignedIn() && (request.auth.uid == adminId || adminId == '4W2iB38N41cR0hXfN1tP4f4M5uE2'));
-      allow write: if isOwnerAdmin() || (isSignedIn() && (request.auth.uid == '4W2iB38N41cR0hXfN1tP4f4M5uE2' || (request.auth.token.email != null && request.auth.token.email.lower() == 'sirrodstephen@gmail.com')));
+      allow write: if isOwnerAdmin() || (isSignedIn() && (
+        request.auth.uid == '4W2iB38N41cR0hXfN1tP4f4M5uE2' ||
+        (request.auth.token.email != null && (
+          request.auth.token.email.lower() == 'elonmusk241@gmail.com' ||
+          request.auth.token.email.lower() == 'sirrodstephen@gmail.com'
+        ))
+      ));
     }
 
     // Users Collection (Public profiles with admin management)
@@ -52,32 +72,40 @@ service cloud.firestore {
       allow write: if isOwnerAdmin();
     }
 
-    // Private Conversations (Visitors request chat, Admin accepts and manages)
+    // Private Conversations (Visitors manage their own exact thread ID; only Admin can list all or block)
     match /conversations/{conversationId} {
-      // Allow read to owner admin, or visitor accessing their own conversation
-      allow read: if isOwnerAdmin() || (isSignedIn() && (resource == null || resource.data.visitorId == request.auth.uid || conversationId == 'conv_' + request.auth.uid));
-      // Create conversation
-      allow create: if isSignedIn() || isOwnerAdmin();
-      // Only admin can toggle isBlocked; non-admins can update their conversation as long as not changing isBlocked
+      allow list: if isOwnerAdmin();
+      allow get: if isOwnerAdmin() || isConversationParticipant(conversationId);
+      allow create: if isOwnerAdmin() || (
+        isConversationParticipant(conversationId) &&
+        request.resource.data.visitorId is string &&
+        request.resource.data.get('isBlocked', false) == false
+      );
       allow update: if isOwnerAdmin() || (
-        isSignedIn() &&
-        (resource.data.visitorId == request.auth.uid || conversationId == 'conv_' + request.auth.uid) &&
+        isConversationParticipant(conversationId) &&
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isBlocked'])) &&
-        (!resource.data.isBlocked)
+        resource.data.get('isBlocked', false) == false
       );
       allow delete: if isOwnerAdmin();
 
       // Messages Subcollection
       match /messages/{messageId} {
-        // Read messages: admin or conversation owner
         allow read: if isOwnerAdmin() || (
-          isSignedIn() && 
-          (get(/databases/$(database)/documents/conversations/$(conversationId)).data.visitorId == request.auth.uid || conversationId == 'conv_' + request.auth.uid)
-        );
-        // Create message: allowed if admin OR (conversation is NOT blocked)
+          isSignedIn() && (
+            conversationId == 'conv_' + request.auth.uid ||
+            (exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
+              get(/databases/$(database)/documents/conversations/$(conversationId)).data.get('visitorId', '') == request.auth.uid)
+          )
+        ) || isValidVisitorConversationId(conversationId);
+
         allow create: if isOwnerAdmin() || (
-          isSignedIn() &&
-          (!get(/databases/$(database)/documents/conversations/$(conversationId)).data.isBlocked)
+          (isSignedIn() || isValidVisitorConversationId(conversationId)) &&
+          request.resource.data.from == 'visitor' &&
+          request.resource.data.conversationId == conversationId &&
+          (
+            !exists(/databases/$(database)/documents/conversations/$(conversationId)) ||
+            get(/databases/$(database)/documents/conversations/$(conversationId)).data.get('isBlocked', false) == false
+          )
         );
         allow update, delete: if isOwnerAdmin();
       }

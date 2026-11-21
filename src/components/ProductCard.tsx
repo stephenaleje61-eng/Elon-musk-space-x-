@@ -28,7 +28,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       return 'https://images.unsplash.com/photo-1517976487492-5750f3195933?w=600';
     }
     if (p.sectionId === 'starlink' || p.title?.toLowerCase().includes('starlink')) {
-      return 'https://images.unsplash.com/photo-1495578942200-c5f5d7af99d3?w=600';
+      return 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=600';
     }
     if (p.sectionId === 'tesla' || p.title?.toLowerCase().includes('tesla') || p.title?.toLowerCase().includes('cybertruck')) {
       return 'https://images.unsplash.com/photo-1560958089-b8a1929cea89?w=600';
@@ -54,11 +54,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const primaryImage = getProductImage(product);
   const productName = (product as any).name || product.title;
 
-  const formatPrice = (val: number) => {
-    if (val >= 1000000) {
-      return `$${(val / 1000000).toFixed(2)}M`;
+  const formatPrice = (val?: number) => {
+    const num = typeof val === 'number' && !Number.isNaN(val) ? val : 0;
+    if (num >= 1000000) {
+      return `$${(num / 1000000).toFixed(2)}M`;
     }
-    return `$${val.toLocaleString()}`;
+    return `$${num.toLocaleString()}`;
   };
 
   return (

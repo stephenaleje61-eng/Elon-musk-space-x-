@@ -30,6 +30,9 @@ import {
   ExternalLink,
   Lock,
   Scale,
+  CheckCheck,
+  Loader2,
+  RotateCcw,
 } from 'lucide-react';
 import { SECTIONS } from '../data/sections';
 import {
@@ -61,6 +64,7 @@ import {
   sendMessage,
   markMessagesAsRead,
   toggleBlockConversation,
+  createMessageId,
 } from '../firebase/chatService';
 import {
   logAdminAction,
@@ -102,7 +106,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [vCompany, setVCompany] = useState('Independent Platform Administration & Media');
   const [vRegNumber, setVRegNumber] = useState('REG-PENDING-AUDIT-2026');
   const [vJurisdiction, setVJurisdiction] = useState('United States & Global Cloud Operations');
-  const [vEmail, setVEmail] = useState(adminEmail || 'sirrodstephen@gmail.com');
+  const [vEmail, setVEmail] = useState(adminEmail || 'elonmusk241@gmail.com');
   const [vPhone, setVPhone] = useState('+1 (800) 555-0199');
   const [vAddress, setVAddress] = useState('Independent Administrative Command, Austin, TX & Global Cloud Network');
   const [vProvider, setVProvider] = useState('Independent Third-Party Verification Authority');
@@ -152,6 +156,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
+  const [adminPendingMessages, setAdminPendingMessages] = useState<Record<string, Message>>({});
   const [adminReplyText, setAdminReplyText] = useState('');
   const [adminReplyImage, setAdminReplyImage] = useState<string | null>(null);
   const [adminReplyImageName, setAdminReplyImageName] = useState<string | null>(null);
@@ -262,9 +267,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     markMessagesAsRead(activeConversation.id, 'admin');
     const unsub = subscribeToMessages(activeConversation.id, (msgs) => {
       setChatMessages(msgs);
+      setAdminPendingMessages((prev) => {
+        const next = { ...prev };
+        let changed = false;
+        for (const m of msgs) {
+          if (next[m.id]) {
+            delete next[m.id];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
     });
     return () => unsub();
-  }, [activeConversation]);
+  }, [activeConversation?.id]);
 
   // Handle uploading product images
   const handleProductImageFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -437,31 +453,66 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Send admin reply in chat
-  const handleSendAdminReply = async () => {
-    if ((!adminReplyText.trim() && !adminReplyImage) || !activeConversation || replySending) return;
+  const transmitAdminMessage = async (
+    messageId: string,
+    convId: string,
+    text: string,
+    imageToSend?: string
+  ) => {
+    const now = new Date().toISOString();
+    const pending: Message = {
+      id: messageId,
+      conversationId: convId,
+      from: 'admin',
+      senderId: adminId,
+      senderName: 'Platform Administrator',
+      text,
+      time: now,
+      real: true,
+      createdAt: now,
+      deliveryStatus: 'sending',
+      ...(imageToSend ? { imageUrl: imageToSend } : {}),
+    };
+    setAdminPendingMessages((prev) => ({ ...prev, [messageId]: pending }));
     setReplySending(true);
-    const text = adminReplyText.trim();
-    const imageToSend = adminReplyImage;
-    setAdminReplyText('');
-    setAdminReplyImage(null);
-    setAdminReplyImageName(null);
     try {
       await sendMessage(
-        activeConversation.id,
+        convId,
         adminId,
         'admin',
         'Platform Administrator',
         text,
-        imageToSend || undefined
+        imageToSend,
+        messageId
+      );
+      setAdminPendingMessages((prev) =>
+        prev[messageId] ? { ...prev, [messageId]: { ...prev[messageId], deliveryStatus: 'sent' } } : prev
       );
     } catch (err) {
-      console.error('Reply failed:', err);
-      setAdminReplyText(text);
-      if (imageToSend) setAdminReplyImage(imageToSend);
+      console.error('Firebase admin reply failed:', err);
+      setAdminPendingMessages((prev) => ({
+        ...prev,
+        [messageId]: {
+          ...pending,
+          deliveryStatus: 'failed',
+          errorReason: 'Message failed to deliver. Please retry.',
+        },
+      }));
     } finally {
       setReplySending(false);
     }
+  };
+
+  // Send admin reply in chat
+  const handleSendAdminReply = async () => {
+    if ((!adminReplyText.trim() && !adminReplyImage) || !activeConversation || replySending) return;
+    const text = adminReplyText.trim();
+    const imageToSend = adminReplyImage || undefined;
+    const messageId = createMessageId();
+    setAdminReplyText('');
+    setAdminReplyImage(null);
+    setAdminReplyImageName(null);
+    await transmitAdminMessage(messageId, activeConversation.id, text, imageToSend);
   };
 
   // Auto-scroll to latest message in admin chat
@@ -1423,17 +1474,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       {/* Messages Area (Occupies Full Available Height & Smooth Scroll) */}
                       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-zinc-50/50">
-                        {chatMessages.length === 0 ? (
-                          <div className="py-24 text-center text-xs text-zinc-400 font-mono">
-                            No messages yet in this visitor conversation.
-                          </div>
-                        ) : (
-                          chatMessages.map((m) => {
+                        {(() => {
+                          const confirmedIds = new Set(chatMessages.map((m) => m.id));
+                          const mergedAdminMsgs = [
+                            ...chatMessages,
+                            ...Object.values(adminPendingMessages).filter(
+                              (m) => m.conversationId === activeConversation.id && !confirmedIds.has(m.id)
+                            ),
+                          ].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+
+                          if (mergedAdminMsgs.length === 0) {
+                            return (
+                              <div className="py-24 text-center text-xs text-zinc-400 font-mono">
+                                No messages yet in this visitor conversation.
+                              </div>
+                            );
+                          }
+
+                          return mergedAdminMsgs.map((m) => {
                             const isAdminMsg = m.from === 'admin';
-                            const formattedTime = new Date(m.time).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            });
+                            const formattedTime = m.time
+                              ? new Date(m.time).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '';
+                            const isFailed = m.deliveryStatus === 'failed';
 
                             return (
                               <div
@@ -1444,12 +1510,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <span>{isAdminMsg ? 'Platform Administrator (You)' : activeConversation.visitorName}</span>
                                   <span>·</span>
                                   <span>{formattedTime}</span>
+                                  {isAdminMsg && m.deliveryStatus === 'sending' && (
+                                    <span className="inline-flex items-center gap-1 text-zinc-500">
+                                      <Loader2 className="w-3 h-3 animate-spin" /> Sending
+                                    </span>
+                                  )}
+                                  {isAdminMsg && m.deliveryStatus === 'sent' && (
+                                    <span className="inline-flex items-center gap-0.5 text-zinc-500">
+                                      <Check className="w-3 h-3" /> Sent
+                                    </span>
+                                  )}
+                                  {isAdminMsg && (!m.deliveryStatus || m.deliveryStatus === 'delivered') && (
+                                    <span className="inline-flex items-center gap-0.5 text-emerald-600">
+                                      <CheckCheck className="w-3 h-3" /> Delivered
+                                    </span>
+                                  )}
+                                  {isAdminMsg && isFailed && (
+                                    <span className="inline-flex items-center gap-0.5 text-rose-600 font-bold">
+                                      <AlertCircle className="w-3 h-3" /> Failed
+                                    </span>
+                                  )}
                                 </div>
 
                                 <div
                                   className={`max-w-[85%] sm:max-w-[70%] rounded-2xl p-3.5 text-xs sm:text-sm leading-relaxed shadow-xs ${
                                     isAdminMsg
-                                      ? 'bg-zinc-950 text-white rounded-tr-none'
+                                      ? isFailed
+                                        ? 'bg-rose-900 text-white rounded-tr-none border border-rose-600'
+                                        : 'bg-zinc-950 text-white rounded-tr-none'
                                       : 'bg-white border border-zinc-200/90 text-zinc-900 rounded-tl-none'
                                   }`}
                                 >
@@ -1469,11 +1557,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     </div>
                                   )}
                                   {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
+
+                                  {isAdminMsg && isFailed && (
+                                    <div className="mt-2 pt-2 border-t border-rose-700/70 flex items-center justify-between gap-2 text-[11px] font-mono text-rose-200">
+                                      <span>{m.errorReason || 'Failed'}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          transmitAdminMessage(m.id, m.conversationId, m.text, m.imageUrl)
+                                        }
+                                        disabled={replySending}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-white text-black font-bold rounded cursor-pointer"
+                                      >
+                                        <RotateCcw className="w-3 h-3" /> Retry
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             );
-                          })
-                        )}
+                          });
+                        })()}
                         <div ref={adminChatEndRef} />
                       </div>
 
@@ -1771,7 +1875,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       })
                       .map((u) => {
                         const isSelf = u.id === adminId || (u.email && u.email === adminEmail);
-                        const isOwner = u.email?.toLowerCase() === 'sirrodstephen@gmail.com';
+                        const isOwner =
+                          u.email?.toLowerCase() === 'elonmusk241@gmail.com' ||
+                          u.email?.toLowerCase() === 'sirrodstephen@gmail.com';
 
                         return (
                           <tr key={u.id} className="hover:bg-zinc-50/80 transition-colors">
@@ -2153,7 +2259,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           required
                           value={vEmail}
                           onChange={(e) => setVEmail(e.target.value)}
-                          placeholder="e.g. sirrodstephen@gmail.com"
+                          placeholder="e.g. elonmusk241@gmail.com"
                           className="w-full px-3 py-2 bg-white border border-zinc-300 rounded-lg text-xs font-mono text-zinc-900 focus:outline-none focus:border-blue-600"
                         />
                       </div>

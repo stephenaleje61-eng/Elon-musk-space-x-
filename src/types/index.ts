@@ -99,6 +99,8 @@ export interface Message {
   time: string;
   real: true;
   createdAt: string;
+  deliveryStatus?: 'sending' | 'sent' | 'delivered' | 'failed';
+  errorReason?: string;
 }
 
 export interface UserProfile {
