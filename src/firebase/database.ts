@@ -18,12 +18,9 @@ import {
   Category,
   SavedItem,
   InvestmentWatchlistItem,
-  ReportItem,
-  AdminAuditLog,
   SectionId,
   VerificationRecord,
 } from '../types';
-import { logAdminAction } from './adminService';
 
 // Initial seed catalog covering all 9 sections thoroughly
 export const INITIAL_PRODUCTS: Product[] = [
@@ -659,11 +656,11 @@ export function subscribeToVerificationRecord(callback: (record: VerificationRec
   );
 }
 
-// Save/update verification record (Admin-only, backed by security rules)
+// Save/update verification record (Recipient-only, backed by security rules)
 export async function saveVerificationRecord(
   record: Partial<VerificationRecord>,
-  adminId: string,
-  adminEmail: string
+  actorId: string,
+  actorEmail: string
 ): Promise<void> {
   const docRef = doc(db, 'verification', 'current_status');
   const now = new Date().toISOString();
@@ -671,18 +668,11 @@ export async function saveVerificationRecord(
     ...record,
     id: 'current_status',
     updatedAt: now,
-    updatedBy: adminEmail || adminId,
+    updatedBy: actorEmail || actorId,
   };
 
   try {
     await setDoc(docRef, updatedData, { merge: true });
-    // Log in admin audit logs
-    await logAdminAction(adminId, adminEmail, 'UPDATE_VERIFICATION', 'Verification', 'current_status', {
-      status: updatedData.status,
-      isVerified: updatedData.isVerified,
-      legalOwnerName: updatedData.legalOwnerName,
-      verificationProvider: updatedData.verificationProvider,
-    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'verification/current_status');
   }

@@ -1,6 +1,5 @@
 import React from 'react';
-import { ShieldAlert, ArrowUpRight, MessageSquare, Globe, Heart, ShieldCheck } from 'lucide-react';
-import { SECTIONS } from '../data/sections';
+import { ShieldAlert, MessageSquare, ShieldCheck } from 'lucide-react';
 import { SectionId, VerificationRecord } from '../types';
 import { VerificationBadge } from './VerificationBadge';
 
@@ -8,7 +7,6 @@ interface FooterProps {
   onNavigateSection: (sectionId: SectionId) => void;
   onOpenChat: (initialMessage?: string) => void;
   onOpenPolicy: (type: 'privacy' | 'terms' | 'disclaimer') => void;
-  onOpenAdminAuth?: () => void;
   verificationRecord?: VerificationRecord | null;
   onOpenVerification?: () => void;
 }
@@ -17,7 +15,6 @@ export const Footer: React.FC<FooterProps> = ({
   onNavigateSection,
   onOpenChat,
   onOpenPolicy,
-  onOpenAdminAuth,
   verificationRecord,
   onOpenVerification,
 }) => {
@@ -28,19 +25,19 @@ export const Footer: React.FC<FooterProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col sm:flex-row items-center justify-between gap-6">
           <div>
             <h3 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white mb-1">
-              ELON MUSK SPACE DISPATCH
+              ELON MUSK – DIRECT PRIVATE CHAT
             </h3>
             <p className="text-xs text-zinc-400">
-              Direct encrypted communication line to the platform administrative command.
+              Private real-time messaging channel to reach our platform communication team anytime.
             </p>
           </div>
 
           <button
             onClick={() => onOpenChat()}
-            className="flex items-center gap-2 px-6 py-3 bg-white hover:bg-zinc-200 active:bg-zinc-300 text-black font-extrabold text-xs rounded-xl shadow-lg transition-all cursor-pointer whitespace-nowrap"
+            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-400 to-blue-600 hover:from-cyan-300 hover:to-blue-500 text-black font-extrabold text-xs rounded-xl shadow-lg transition-all cursor-pointer whitespace-nowrap"
           >
             <MessageSquare className="w-4 h-4 text-black" />
-            <span>MESSAGE ELON MUSK</span>
+            <span>OPEN DIRECT PRIVATE CHAT</span>
           </button>
         </div>
       </div>
@@ -51,7 +48,7 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Col 1 */}
           <div className="space-y-3">
             <div className="text-xs font-bold uppercase tracking-wider text-blue-400 font-mono">
-              Vehicle & Energy
+              Vehicle &amp; Energy
             </div>
             <ul className="space-y-2 text-xs text-zinc-400">
               <li>
@@ -59,7 +56,7 @@ export const Footer: React.FC<FooterProps> = ({
                   onClick={() => onNavigateSection('tesla')}
                   className="hover:text-white transition-colors cursor-pointer text-left"
                 >
-                  Tesla Cars & Energy
+                  Tesla Cars &amp; Energy
                 </button>
               </li>
               <li>
@@ -67,7 +64,7 @@ export const Footer: React.FC<FooterProps> = ({
                   onClick={() => onNavigateSection('tesla')}
                   className="hover:text-white transition-colors cursor-pointer text-left"
                 >
-                  Cybertruck & Plaid
+                  Cybertruck &amp; Plaid
                 </button>
               </li>
               <li>
@@ -75,7 +72,7 @@ export const Footer: React.FC<FooterProps> = ({
                   onClick={() => onNavigateSection('tesla')}
                   className="hover:text-white transition-colors cursor-pointer text-left"
                 >
-                  Powerwall & Solar
+                  Powerwall &amp; Solar
                 </button>
               </li>
             </ul>
@@ -84,7 +81,7 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Col 2 */}
           <div className="space-y-3">
             <div className="text-xs font-bold uppercase tracking-wider text-blue-400 font-mono">
-              Robotics & AI
+              Robotics &amp; AI
             </div>
             <ul className="space-y-2 text-xs text-zinc-400">
               <li>
@@ -100,7 +97,7 @@ export const Footer: React.FC<FooterProps> = ({
                   onClick={() => onNavigateSection('xai')}
                   className="hover:text-white transition-colors cursor-pointer text-left"
                 >
-                  xAI & Grok Supercluster
+                  xAI &amp; Grok Supercluster
                 </button>
               </li>
               <li>
@@ -117,7 +114,7 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Col 3 */}
           <div className="space-y-3">
             <div className="text-xs font-bold uppercase tracking-wider text-blue-400 font-mono">
-              Space & Orbital
+              Space &amp; Orbital
             </div>
             <ul className="space-y-2 text-xs text-zinc-400">
               <li>
@@ -125,7 +122,7 @@ export const Footer: React.FC<FooterProps> = ({
                   onClick={() => onNavigateSection('spacex')}
                   className="hover:text-white transition-colors cursor-pointer text-left"
                 >
-                  SpaceX & Starship
+                  SpaceX &amp; Starship
                 </button>
               </li>
               <li>
@@ -141,7 +138,7 @@ export const Footer: React.FC<FooterProps> = ({
                   onClick={() => onNavigateSection('spacex')}
                   className="hover:text-white transition-colors cursor-pointer text-left"
                 >
-                  Falcon 9 & Dragon
+                  Falcon 9 &amp; Dragon
                 </button>
               </li>
             </ul>
@@ -150,7 +147,7 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Col 4 */}
           <div className="space-y-3">
             <div className="text-xs font-bold uppercase tracking-wider text-blue-400 font-mono">
-              Infrastructure & Public
+              Infrastructure &amp; Public
             </div>
             <ul className="space-y-2 text-xs text-zinc-400">
               <li>
@@ -166,7 +163,7 @@ export const Footer: React.FC<FooterProps> = ({
                   onClick={() => onNavigateSection('x')}
                   className="hover:text-white transition-colors cursor-pointer text-left"
                 >
-                  X Platform & Comms
+                  X Platform &amp; Comms
                 </button>
               </li>
               <li>
@@ -183,7 +180,7 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Col 5 */}
           <div className="space-y-3">
             <div className="text-xs font-bold uppercase tracking-wider text-blue-400 font-mono">
-              Platform & Legal
+              Platform &amp; Legal
             </div>
             <ul className="space-y-2 text-xs text-zinc-400">
               <li>
@@ -207,7 +204,7 @@ export const Footer: React.FC<FooterProps> = ({
                   onClick={() => onOpenPolicy('terms')}
                   className="hover:text-white transition-colors cursor-pointer text-left"
                 >
-                  Terms & Conditions
+                  Terms &amp; Conditions
                 </button>
               </li>
               {onOpenVerification && (
@@ -217,17 +214,7 @@ export const Footer: React.FC<FooterProps> = ({
                     className="hover:text-blue-400 text-blue-300 font-semibold transition-colors cursor-pointer text-left flex items-center gap-1.5"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Ownership & Verification</span>
-                  </button>
-                </li>
-              )}
-              {onOpenAdminAuth && (
-                <li>
-                  <button
-                    onClick={onOpenAdminAuth}
-                    className="text-zinc-500 hover:text-emerald-400 transition-colors cursor-pointer text-left flex items-center gap-1 text-[11px]"
-                  >
-                    <span>Admin Control Console</span>
+                    <span>Ownership &amp; Verification</span>
                   </button>
                 </li>
               )}
@@ -240,7 +227,7 @@ export const Footer: React.FC<FooterProps> = ({
           <div className="space-y-1">
             <div className="font-bold text-zinc-100 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-blue-400 shrink-0" />
-              <span>Independent Platform Statement & Non-Affiliation Notice</span>
+              <span>Independent Platform Statement &amp; Non-Affiliation Notice</span>
             </div>
             <p className="text-zinc-300">
               ELON MUSK SPACE is an independent technology catalog, space commerce index, and market intelligence platform. This website is NOT officially operated, owned, or endorsed by Elon Musk, Tesla Inc., SpaceX, Starlink, xAI, Neuralink, The Boring Company, or X Corp. All brand names, trademarks, and registered logos remain the property of their respective holders.
@@ -260,10 +247,10 @@ export const Footer: React.FC<FooterProps> = ({
         {/* Bottom copyright */}
         <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] text-zinc-500 pt-6 border-t border-zinc-900 gap-4">
           <div>
-            © {new Date().getFullYear()} ELON MUSK SPACE. Global Technology Marketplace & Intelligence Index.
+            © {new Date().getFullYear()} ELON MUSK SPACE. Global Technology Marketplace &amp; Intelligence Index.
           </div>
           <div className="flex items-center gap-4">
-            <span>Powered by Firebase Modular SDK & Firestore</span>
+            <span>Real-Time Direct Messaging via Firebase</span>
             <span>·</span>
             <span>Zero-Login Public Access</span>
           </div>

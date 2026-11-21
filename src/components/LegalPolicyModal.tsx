@@ -37,11 +37,11 @@ export const LegalPolicyModal: React.FC<LegalPolicyModalProps> = ({ type, onClos
               <p>
                 All stock data, equity milestones, and financial ratios displayed in the Investment Information section are gathered from public securities filings and financial market indices. This information does not constitute investment advice, solicitations, or offers of private equity shares.
               </p>
-              <h4 className="font-bold text-sm text-zinc-950">3. Hardware & Inquiries</h4>
+              <h4 className="font-bold text-sm text-zinc-950">3. Hardware &amp; Inquiries</h4>
               <p>
-                Product specifications, pricing estimates, and delivery manifests are compiled for global technology buyers and aerospace researchers. Inquiries initiated through &quot;Chat Elon Musk&quot; connect visitors with the platform administrative team.
+                Product specifications, pricing estimates, and delivery manifests are compiled for global technology buyers and aerospace researchers. Inquiries initiated through &quot;ELON MUSK – DIRECT PRIVATE CHAT&quot; connect visitors with our platform communication team.
               </p>
-              <h4 className="font-bold text-sm text-zinc-950">4. Ownership & Authenticity Verification</h4>
+              <h4 className="font-bold text-sm text-zinc-950">4. Ownership &amp; Authenticity Verification</h4>
               <p>
                 In compliance with strict governance standards, ELON MUSK SPACE maintains an independently verifiable ownership and corporate identity registry. The platform strictly prohibits fabricated endorsements, fake partnerships, or unauthorized claims of ownership. Official verification credentials and blue badges are granted only following independent validation by an authorized verification provider.
               </p>
@@ -56,7 +56,7 @@ export const LegalPolicyModal: React.FC<LegalPolicyModalProps> = ({ type, onClos
               </p>
               <h4 className="font-bold text-sm text-zinc-950">Anonymous Private Messaging</h4>
               <p>
-                When you initiate a conversation via &quot;Chat Elon Musk&quot;, Firebase Anonymous Authentication generates an ephemeral session key. Your messages are stored in private Cloud Firestore collections and are inaccessible to any other marketplace visitor.
+                When you initiate a conversation via &quot;ELON MUSK – DIRECT PRIVATE CHAT&quot;, Firebase Anonymous Authentication generates a persistent unique conversation ID. Your text, picture, and voice messages are stored in private Cloud Firestore collections and are inaccessible to any other marketplace visitor.
               </p>
               <h4 className="font-bold text-sm text-zinc-950">No Third-Party Data Selling</h4>
               <p>

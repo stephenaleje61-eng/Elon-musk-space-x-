@@ -71,10 +71,10 @@ export const SectionView: React.FC<SectionViewProps> = ({
                 onClick={() =>
                   onOpenChat(`Inquiring regarding products and technical programs in ${section.name}.`)
                 }
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 bg-white hover:bg-zinc-200 active:bg-zinc-300 text-black font-extrabold text-sm rounded-xl shadow-md transition-all cursor-pointer transform hover:-translate-y-0.5"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 bg-gradient-to-r from-cyan-400 to-blue-600 hover:from-cyan-300 hover:to-blue-500 text-black font-extrabold text-sm rounded-xl shadow-md transition-all cursor-pointer transform hover:-translate-y-0.5"
               >
                 <MessageSquare className="w-4 h-4 text-black" />
-                <span>MESSAGE ELON MUSK</span>
+                <span>DIRECT PRIVATE CHAT</span>
               </button>
             </div>
           </div>

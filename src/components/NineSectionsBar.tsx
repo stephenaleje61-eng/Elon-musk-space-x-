@@ -3,7 +3,7 @@ import { SECTIONS } from '../data/sections';
 import { SectionId } from '../types';
 
 interface NineSectionsBarProps {
-  activeSection: SectionId | 'home' | 'investment-hub' | 'admin' | 'verification';
+  activeSection: SectionId | 'home' | 'investment-hub' | 'verification' | 'chat' | 'recipient-inbox';
   onSelectSection: (id: SectionId) => void;
 }
 

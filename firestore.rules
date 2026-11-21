@@ -2,12 +2,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global helper primitives
+    // Global catch-all default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwnerAdmin() {
+    // Designated website recipient identity verification (never exposed to public)
+    function isDesignatedRecipient() {
       return isSignedIn() &&
         request.auth.token.email != null &&
         request.auth.token.email_verified == true &&
@@ -15,7 +20,9 @@ service cloud.firestore {
     }
 
     function isValidVisitorConversationId(conversationId) {
-      return conversationId.matches('^conv_(anon_)?[A-Za-z0-9_-]{8,64}$');
+      return conversationId is string &&
+        conversationId.size() <= 128 &&
+        conversationId.matches('^conv_(anon_)?[A-Za-z0-9_-]{8,64}$');
     }
 
     function isConversationParticipant(conversationId) {
@@ -25,70 +32,81 @@ service cloud.firestore {
       )) || isValidVisitorConversationId(conversationId);
     }
 
-    // Health check & connection validation
+    function isValidVisitorMessagePayload(data, conversationId) {
+      return data.keys().hasAll(['id', 'conversationId', 'from', 'senderId', 'senderName', 'text', 'time', 'real', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'conversationId', 'from', 'senderId', 'senderName', 'text', 'messageType', 'imageUrl', 'imageCaption', 'audioUrl', 'audioDuration', 'time', 'real', 'createdAt']) &&
+        data.from == 'visitor' &&
+        data.conversationId == conversationId &&
+        data.id is string && data.id.size() >= 3 && data.id.size() <= 128 &&
+        data.senderId is string && data.senderId.size() >= 3 && data.senderId.size() <= 128 &&
+        data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 100 &&
+        data.text is string && data.text.size() <= 8000 &&
+        data.time is string && data.time.size() <= 64 &&
+        data.createdAt is string && data.createdAt.size() <= 64 &&
+        data.real == true &&
+        (!('messageType' in data) || (data.messageType in ['text', 'image', 'voice'])) &&
+        (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 950000)) &&
+        (!('imageCaption' in data) || (data.imageCaption is string && data.imageCaption.size() <= 1000)) &&
+        (!('audioUrl' in data) || (data.audioUrl is string && data.audioUrl.size() <= 950000)) &&
+        (!('audioDuration' in data) || (data.audioDuration is number && data.audioDuration >= 0 && data.audioDuration <= 300));
+    }
+
+    // Connection health check
     match /test/{docId} {
       allow read: if true;
     }
 
-    // Administrators Collection (Strictly restricted to verified sirrodstephen@gmail.com)
-    match /admins/{adminId} {
-      allow read: if isOwnerAdmin();
-      allow write: if isOwnerAdmin();
-    }
-
-    // Users Collection (Admin management; block non-admin privilege escalation)
+    // Users Collection (strictly self-owned role guard)
     match /users/{userId} {
-      allow read: if true;
-      allow create: if isOwnerAdmin() || (
+      allow read: if isDesignatedRecipient() || (isSignedIn() && request.auth.uid == userId);
+      allow create: if isDesignatedRecipient() || (
         isSignedIn() &&
         request.auth.uid == userId &&
         request.resource.data.get('role', 'user') == 'user'
       );
-      allow update: if isOwnerAdmin() || (
+      allow update: if isDesignatedRecipient() || (
         isSignedIn() &&
         request.auth.uid == userId &&
         request.resource.data.get('role', 'user') == resource.data.get('role', 'user')
       );
-      allow delete: if isOwnerAdmin();
+      allow delete: if isDesignatedRecipient();
     }
 
-    // Products Catalog (Public catalog browsing, Admin-only modifications)
+    // Products Catalog
     match /products/{productId} {
       allow read: if true;
-      allow write: if isOwnerAdmin();
+      allow write: if isDesignatedRecipient();
     }
 
-    // Articles & Deep Dives (Public reading, Admin-only publishing)
+    // Articles & Deep Dives
     match /articles/{articleId} {
       allow read: if true;
-      allow write: if isOwnerAdmin();
+      allow write: if isDesignatedRecipient();
     }
 
     // Categories Hierarchy
     match /categories/{categoryId} {
       allow read: if true;
-      allow write: if isOwnerAdmin();
+      allow write: if isDesignatedRecipient();
     }
 
-    // Private Conversations (Visitors manage their own exact thread ID; only Admin can list all or block)
+    // Private Direct Conversations
+    // Visitors can read/write ONLY their own unique conversation ID; no visitor can list all conversations
     match /conversations/{conversationId} {
-      allow list: if isOwnerAdmin();
-      allow get: if isOwnerAdmin() || isConversationParticipant(conversationId);
-      allow create: if isOwnerAdmin() || (
+      allow list: if isDesignatedRecipient();
+      allow get: if isDesignatedRecipient() || isConversationParticipant(conversationId);
+      allow create: if isDesignatedRecipient() || (
         isConversationParticipant(conversationId) &&
         request.resource.data.visitorId is string &&
+        request.resource.data.visitorId.size() <= 128 &&
         request.resource.data.get('isBlocked', false) == false
       );
-      allow update: if isOwnerAdmin() || (
-        isConversationParticipant(conversationId) &&
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isBlocked'])) &&
-        resource.data.get('isBlocked', false) == false
-      );
-      allow delete: if isOwnerAdmin();
+      allow update: if isDesignatedRecipient() || isConversationParticipant(conversationId);
+      allow delete: if isDesignatedRecipient();
 
-      // Messages Subcollection
+      // Messages Subcollection (supports text, pictures, and voice messages)
       match /messages/{messageId} {
-        allow read: if isOwnerAdmin() || (
+        allow read: if isDesignatedRecipient() || (
           isSignedIn() && (
             conversationId == 'conv_' + request.auth.uid ||
             (exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
@@ -96,49 +114,50 @@ service cloud.firestore {
           )
         ) || isValidVisitorConversationId(conversationId);
 
-        allow create: if isOwnerAdmin() || (
+        allow create: if isDesignatedRecipient() || (
           (isSignedIn() || isValidVisitorConversationId(conversationId)) &&
-          request.resource.data.from == 'visitor' &&
-          request.resource.data.conversationId == conversationId &&
-          (
-            !exists(/databases/$(database)/documents/conversations/$(conversationId)) ||
-            get(/databases/$(database)/documents/conversations/$(conversationId)).data.get('isBlocked', false) == false
-          )
+          isValidVisitorMessagePayload(request.resource.data, conversationId)
         );
-        allow update, delete: if isOwnerAdmin();
+        allow update, delete: if isDesignatedRecipient();
       }
-    }
-
-    // Notifications Collection
-    match /notifications/{notificationId} {
-      allow read, write: if true;
     }
 
     // Saved Items / Bookmarks
     match /savedItems/{savedItemId} {
-      allow read, write: if true;
+      allow read: if isDesignatedRecipient() || (
+        (isSignedIn() && resource.data.userId == request.auth.uid) ||
+        (resource.data.userId is string && resource.data.userId.matches('^anon_[A-Za-z0-9_-]{8,64}$'))
+      );
+      allow create, update: if isDesignatedRecipient() || (
+        (isSignedIn() && request.resource.data.userId == request.auth.uid) ||
+        (request.resource.data.userId is string && request.resource.data.userId.matches('^anon_[A-Za-z0-9_-]{8,64}$'))
+      );
+      allow delete: if isDesignatedRecipient() || (
+        (isSignedIn() && resource.data.userId == request.auth.uid) ||
+        (resource.data.userId is string && resource.data.userId.matches('^anon_[A-Za-z0-9_-]{8,64}$'))
+      );
     }
 
     // Investment Watchlists
     match /investmentWatchlists/{watchlistId} {
-      allow read, write: if true;
+      allow read: if isDesignatedRecipient() || (
+        (isSignedIn() && resource.data.userId == request.auth.uid) ||
+        (resource.data.userId is string && resource.data.userId.matches('^anon_[A-Za-z0-9_-]{8,64}$'))
+      );
+      allow create, update: if isDesignatedRecipient() || (
+        (isSignedIn() && request.resource.data.userId == request.auth.uid) ||
+        (request.resource.data.userId is string && request.resource.data.userId.matches('^anon_[A-Za-z0-9_-]{8,64}$'))
+      );
+      allow delete: if isDesignatedRecipient() || (
+        (isSignedIn() && resource.data.userId == request.auth.uid) ||
+        (resource.data.userId is string && resource.data.userId.matches('^anon_[A-Za-z0-9_-]{8,64}$'))
+      );
     }
 
-    // User Moderation Reports (Public create, Admin-only triage and resolution)
-    match /reports/{reportId} {
-      allow create: if true;
-      allow read, update, delete: if isOwnerAdmin();
-    }
-
-    // Admin Audit Logs (Strictly Admin-only)
-    match /adminAuditLogs/{logId} {
-      allow read, write: if isOwnerAdmin();
-    }
-
-    // Ownership & Authenticity Verification Records
+    // Ownership & Authenticity Verification Disclosure
     match /verification/{docId} {
       allow read: if true;
-      allow write: if isOwnerAdmin();
+      allow write: if isDesignatedRecipient();
     }
   }
 }

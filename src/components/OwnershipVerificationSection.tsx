@@ -22,15 +22,11 @@ import { VerificationBadge } from './VerificationBadge';
 interface OwnershipVerificationSectionProps {
   record: VerificationRecord;
   onOpenPolicy?: (type: 'privacy' | 'terms' | 'disclaimer') => void;
-  onOpenAdminAuth?: () => void;
-  isAdmin?: boolean;
 }
 
 export const OwnershipVerificationSection: React.FC<OwnershipVerificationSectionProps> = ({
   record,
   onOpenPolicy,
-  onOpenAdminAuth,
-  isAdmin,
 }) => {
   const isVerified = record.isVerified === true && record.status === 'verified';
   const isPending = record.status === 'pending_audit';
@@ -343,19 +339,6 @@ export const OwnershipVerificationSection: React.FC<OwnershipVerificationSection
                 </div>
               </div>
             </div>
-
-            {isAdmin && onOpenAdminAuth && (
-              <div className="pt-6 mt-6 border-t border-zinc-800/80">
-                <button
-                  type="button"
-                  onClick={onOpenAdminAuth}
-                  className="w-full py-2.5 px-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <Lock className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Update Verification in Admin Dashboard</span>
-                </button>
-              </div>
-            )}
           </div>
 
         </div>

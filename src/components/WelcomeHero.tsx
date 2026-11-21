@@ -103,13 +103,13 @@ export const WelcomeHero: React.FC<WelcomeHeroProps> = ({
 
             <button
               onClick={onChatPrivately}
-              className="flex items-center justify-between px-5 py-4 bg-white text-black font-extrabold text-sm rounded-xl hover:bg-zinc-200 active:bg-zinc-300 transition-all shadow-md group cursor-pointer"
+              className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-cyan-400 to-blue-600 text-black font-extrabold text-sm rounded-xl hover:from-cyan-300 hover:to-blue-500 transition-all shadow-md group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <MessageSquare className="w-4 h-4 text-black" />
-                <span className="tracking-wide">MESSAGE ELON MUSK</span>
+                <span className="tracking-wide">DIRECT PRIVATE CHAT</span>
               </div>
-              <ArrowRight className="w-4 h-4 text-zinc-600 group-hover:translate-x-1 group-hover:text-black transition-transform" />
+              <ArrowRight className="w-4 h-4 text-zinc-900 group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
         </div>

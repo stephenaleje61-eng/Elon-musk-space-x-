@@ -1,17 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   MessageSquare,
-  TrendingUp,
   ArrowRight,
-  ShieldCheck,
-  ShieldAlert,
-  Sparkles,
-  Zap,
-  Globe,
-  Layers,
   ChevronRight,
-  Bookmark,
-  Share2,
 } from 'lucide-react';
 import { SECTIONS } from './data/sections';
 import { Product, Article, SavedItem, SectionId, VerificationRecord } from './types';
@@ -24,7 +15,7 @@ import {
   subscribeToVerificationRecord,
   DEFAULT_VERIFICATION_RECORD,
 } from './firebase/database';
-import { subscribeToAuth, ensureAnonymousAuth, logOutUser } from './firebase/auth';
+import { subscribeToAuth, ensureAnonymousAuth } from './firebase/auth';
 
 // Components
 import { Navbar } from './components/Navbar';
@@ -34,9 +25,8 @@ import { ProductCard } from './components/ProductCard';
 import { ProductDetailModal } from './components/ProductDetailModal';
 import { SectionView } from './components/SectionView';
 import { InvestmentHubView } from './components/InvestmentHubView';
-import { ChatElonMuskModal } from './components/ChatElonMuskModal';
-import { AdminDashboard } from './components/AdminDashboard';
-import { AdminAuthModal } from './components/AdminAuthModal';
+import { DirectPrivateChat } from './components/DirectPrivateChat';
+import { RecipientInboxView } from './components/RecipientInboxView';
 import { SearchModal } from './components/SearchModal';
 import { SavedDrawer } from './components/SavedDrawer';
 import { Footer } from './components/Footer';
@@ -44,12 +34,19 @@ import { LegalPolicyModal } from './components/LegalPolicyModal';
 import { OwnershipVerificationSection } from './components/OwnershipVerificationSection';
 import { OwnershipVerificationModal } from './components/OwnershipVerificationModal';
 
+type AppView = SectionId | 'home' | 'investment-hub' | 'verification' | 'chat' | 'recipient-inbox';
+
 export default function App() {
-  // Navigation State (protect direct /admin URL access cleanly)
-  const initialIsAdminPath =
-    typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith('/admin');
-  const [currentView, setCurrentView] = useState<SectionId | 'home' | 'investment-hub' | 'admin' | 'verification'>(
-    initialIsAdminPath ? 'admin' : 'home'
+  const initialIsRecipientPath =
+    typeof window !== 'undefined' &&
+    window.location.pathname.toLowerCase().startsWith('/recipient-inbox');
+
+  const initialIsChatPath =
+    typeof window !== 'undefined' &&
+    window.location.pathname.toLowerCase().startsWith('/chat');
+
+  const [currentView, setCurrentView] = useState<AppView>(
+    initialIsRecipientPath ? 'recipient-inbox' : initialIsChatPath ? 'chat' : 'home'
   );
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
@@ -58,55 +55,42 @@ export default function App() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
   const [savedItemIds, setSavedItemIds] = useState<Set<string>>(new Set());
-  const [verificationRecord, setVerificationRecord] = useState<VerificationRecord>(DEFAULT_VERIFICATION_RECORD);
+  const [verificationRecord, setVerificationRecord] = useState<VerificationRecord>(
+    DEFAULT_VERIFICATION_RECORD
+  );
 
   // Auth State
   const [user, setUser] = useState<{ uid: string; email?: string | null } | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminEmail, setAdminEmail] = useState<string>('');
+  const [isRecipient, setIsRecipient] = useState(false);
 
-  // Modals & Drawers
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatInitialMessage, setChatInitialMessage] = useState<string | undefined>(undefined);
+  // Modals, Drawers & Direct Chat Draft
+  const [chatDraftMessage, setChatDraftMessage] = useState<string | undefined>(undefined);
   const [searchOpen, setSearchOpen] = useState(false);
   const [savedDrawerOpen, setSavedDrawerOpen] = useState(false);
-  const [adminAuthOpen, setAdminAuthOpen] = useState(false);
   const [verificationModalOpen, setVerificationModalOpen] = useState(false);
   const [policyType, setPolicyType] = useState<'privacy' | 'terms' | 'disclaimer' | null>(null);
 
-  // Initialize Firebase listeners and database seeding
   useEffect(() => {
-    // 1. Seed database with rich catalog if empty
     seedDatabaseIfEmpty();
 
-    // 2. Real-time product catalog listener
     const unsubProducts = subscribeToProducts((prods) => {
       setProducts(prods);
     });
 
-    // 3. Real-time articles listener
     const unsubArticles = subscribeToArticles((arts) => {
       setArticles(arts);
     });
 
-    // 4. Auth State Listener
-    const unsubAuth = subscribeToAuth((fbUser, isUserAdmin) => {
+    const unsubAuth = subscribeToAuth((fbUser, recipientFlag) => {
       if (fbUser) {
         setUser({ uid: fbUser.uid, email: fbUser.email });
-        setIsAdmin(isUserAdmin);
-        if (isUserAdmin) {
-          setAdminEmail(fbUser.email || '');
-        } else {
-          setAdminEmail('');
-        }
+        setIsRecipient(recipientFlag);
       } else {
         setUser(null);
-        setIsAdmin(false);
-        setAdminEmail('');
+        setIsRecipient(false);
       }
     });
 
-    // 5. Verification Record Listener
     const unsubVerification = subscribeToVerificationRecord((rec) => {
       setVerificationRecord(rec);
     });
@@ -119,7 +103,6 @@ export default function App() {
     };
   }, []);
 
-  // Listen to saved items when user exists
   useEffect(() => {
     if (!user) return;
     const unsub = subscribeToSavedItems(user.uid, (items) => {
@@ -129,7 +112,6 @@ export default function App() {
     return () => unsub();
   }, [user]);
 
-  // Handlers
   const handleToggleSave = async (prod: Product) => {
     try {
       let activeUid = user?.uid;
@@ -151,49 +133,40 @@ export default function App() {
     }
   };
 
-  const handleOpenChat = (initialMessage?: string) => {
-    setChatInitialMessage(initialMessage);
-    setChatOpen(true);
-  };
+  const handleOpenChat = useCallback((initialMessage?: string) => {
+    if (initialMessage) {
+      setChatDraftMessage(initialMessage);
+    }
+    setCurrentView('chat');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
-  const handleLogout = async () => {
-    await logOutUser();
-    setIsAdmin(false);
-    setAdminEmail('');
-    setCurrentView('home');
-  };
+  const handleClearDraft = useCallback(() => {
+    setChatDraftMessage(undefined);
+  }, []);
 
-  // Featured Products and Articles for Homepage
   const featuredProducts = products.filter((p) => p.isFeatured).slice(0, 6);
   const featuredArticles = articles.filter((a) => a.isFeatured).slice(0, 3);
 
   return (
-    <div className="min-h-screen bg-white text-zinc-950 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
-      {/* Navigation Header */}
+    <div className="min-h-screen bg-white text-zinc-950 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
+      {/* Navigation Header (Zero Admin Dashboard Menus or Auth Gates) */}
       <Navbar
         activeSection={currentView}
         onNavigate={(sec) => {
-          if (sec === 'admin' && !isAdmin) {
-            setAdminAuthOpen(true);
-          } else {
-            setCurrentView(sec);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }
+          setCurrentView(sec);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onOpenChat={handleOpenChat}
         onOpenSearch={() => setSearchOpen(true)}
         savedCount={savedItems.length}
         onOpenSavedDrawer={() => setSavedDrawerOpen(true)}
-        isAdmin={isAdmin}
-        userEmail={user?.email}
-        onLogout={handleLogout}
-        onOpenAdminAuth={() => setAdminAuthOpen(true)}
         verificationRecord={verificationRecord}
         onOpenVerification={() => setVerificationModalOpen(true)}
       />
 
-      {/* Nine Sections Fast Bar (visible across main views) */}
-      {currentView !== 'admin' && (
+      {/* Nine Sections Fast Bar */}
+      {currentView !== 'chat' && currentView !== 'recipient-inbox' && (
         <NineSectionsBar
           activeSection={currentView}
           onSelectSection={(secId) => {
@@ -209,43 +182,29 @@ export default function App() {
 
       {/* Main View Switcher */}
       <main className="flex-1">
-        {/* VIEW: ADMIN DASHBOARD */}
-        {currentView === 'admin' && isAdmin && (
-          <AdminDashboard
-            products={products}
-            articles={articles}
-            adminEmail={user?.email || adminEmail || 'elonmusk241@gmail.com'}
-            adminId={user?.uid || 'admin'}
-            onLogout={handleLogout}
-            onBackToStore={() => setCurrentView('home')}
+        {/* VIEW: FULL-SCREEN DIRECT PRIVATE CHAT */}
+        {currentView === 'chat' && (
+          <DirectPrivateChat
+            variant="fullscreen"
+            initialDraft={chatDraftMessage}
+            onClearDraft={handleClearDraft}
+            onBackToMarketplace={() => setCurrentView('home')}
+            onToggleExpand={() => setCurrentView('home')}
           />
         )}
 
-        {/* RESTRICTED ACCESS SCREEN IF CURRENT VIEW IS ADMIN BUT NOT ADMIN */}
-        {currentView === 'admin' && !isAdmin && (
-          <div className="max-w-xl mx-auto my-20 p-8 text-center bg-white rounded-2xl border border-zinc-200 shadow-sm">
-            <div className="w-16 h-16 mx-auto mb-4 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 border border-amber-200">
-              <ShieldAlert className="w-8 h-8" />
-            </div>
-            <h2 className="text-xl font-bold text-zinc-950 mb-2">Administrator Access Restricted</h2>
-            <p className="text-sm text-zinc-600 mb-6 leading-relaxed">
-              The Administrator Control Console is restricted exclusively to the verified website owner. Ordinary visitors cannot access administrative tools.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              <button
-                onClick={() => setAdminAuthOpen(true)}
-                className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl transition shadow-sm cursor-pointer"
-              >
-                Sign In as Website Owner
-              </button>
-              <button
-                onClick={() => setCurrentView('home')}
-                className="w-full sm:w-auto px-5 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-medium text-sm rounded-xl transition cursor-pointer"
-              >
-                Return to Homepage
-              </button>
-            </div>
-          </div>
+        {/* VIEW: UNLISTED RECIPIENT REPLY WORKFLOW (Never linked in public UI) */}
+        {currentView === 'recipient-inbox' && (
+          <RecipientInboxView
+            user={user}
+            isRecipient={isRecipient}
+            onBackToSite={() => {
+              if (typeof window !== 'undefined') {
+                window.history.replaceState({}, '', '/');
+              }
+              setCurrentView('home');
+            }}
+          />
         )}
 
         {/* VIEW: INVESTMENT HUB (SECTION 09) */}
@@ -258,14 +217,13 @@ export default function App() {
           <OwnershipVerificationSection
             record={verificationRecord}
             onOpenPolicy={(type) => setPolicyType(type)}
-            onOpenAdminAuth={() => setAdminAuthOpen(true)}
-            isAdmin={isAdmin}
           />
         )}
 
         {/* VIEW: SECTION DETAIL VIEW (SECTIONS 1–8) */}
         {currentView !== 'home' &&
-          currentView !== 'admin' &&
+          currentView !== 'chat' &&
+          currentView !== 'recipient-inbox' &&
           currentView !== 'investment-hub' &&
           currentView !== 'verification' &&
           SECTIONS.find((s) => s.id === currentView) && (
@@ -281,10 +239,10 @@ export default function App() {
             />
           )}
 
-        {/* VIEW: HOMEPAGE (ZERO-LOGIN OPEN MARKETPLACE) */}
+        {/* VIEW: HOMEPAGE */}
         {currentView === 'home' && (
           <div>
-            {/* Section 5: Welcome Hero Screen with 4 Large Buttons */}
+            {/* Welcome Hero */}
             <WelcomeHero
               onExploreProducts={() => {
                 const el = document.getElementById('featured-marketplace');
@@ -298,7 +256,14 @@ export default function App() {
                 setCurrentView('investment-hub');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              onChatPrivately={() => handleOpenChat()}
+              onChatPrivately={() => {
+                const chatEl = document.getElementById('direct-private-chat');
+                if (chatEl) {
+                  chatEl.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                  handleOpenChat();
+                }
+              }}
               verificationRecord={verificationRecord}
               onOpenVerification={() => setVerificationModalOpen(true)}
             />
@@ -356,14 +321,17 @@ export default function App() {
             </section>
 
             {/* Featured Hardware & Vehicle Marketplace Grid */}
-            <section id="featured-marketplace" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 border-b border-zinc-200">
+            <section
+              id="featured-marketplace"
+              className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 border-b border-zinc-200"
+            >
               <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-4">
                 <div>
                   <div className="text-xs uppercase font-mono tracking-widest text-blue-600 mb-1 font-semibold">
                     MARKETPLACE CATALOG
                   </div>
                   <h2 className="text-2xl sm:text-3xl font-extrabold text-zinc-950">
-                    Featured Technology & Vehicles
+                    Featured Technology &amp; Vehicles
                   </h2>
                 </div>
 
@@ -373,7 +341,7 @@ export default function App() {
                     className="flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-700 text-xs font-bold rounded-lg hover:bg-blue-100 transition-colors cursor-pointer"
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
-                    <span>Inquire via Dispatch</span>
+                    <span>Inquire Directly</span>
                   </button>
                   <button
                     onClick={() => setCurrentView('tesla')}
@@ -385,7 +353,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Product Grid (3-column desktop layout adhering to design rules) */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                 {featuredProducts.map((prod) => (
                   <ProductCard
@@ -396,7 +363,7 @@ export default function App() {
                     isSaved={savedItemIds.has(prod.id)}
                     onQuickChat={(p) =>
                       handleOpenChat(
-                        `Inquiry regarding ${p.title} ($${Number(p.price || 0).toLocaleString()}): allocation scheduling.`
+                        `Inquiry regarding ${p.title} ($${Number(p.price || 0).toLocaleString()}): availability and delivery scheduling.`
                       )
                     }
                   />
@@ -404,28 +371,38 @@ export default function App() {
               </div>
             </section>
 
-            {/* Section 7 Callout Banner: Prominent CHAT ELON MUSK */}
-            <section className="bg-zinc-950 text-white border-b border-zinc-800">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 flex flex-col md:flex-row items-center justify-between gap-8">
-                <div className="max-w-2xl">
-                  <div className="text-xs font-mono uppercase text-blue-400 mb-2 tracking-widest">
-                    PRIVATE ONE-TO-ONE MESSAGING
+            {/* DEDICATED HOMEPAGE SECTION: ELON MUSK – DIRECT PRIVATE CHAT */}
+            <section
+              id="direct-private-chat"
+              className="bg-black text-white border-b border-zinc-800 py-14 sm:py-20"
+            >
+              <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8">
+                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6 sm:mb-8">
+                  <div>
+                    <div className="text-xs font-mono uppercase tracking-widest text-cyan-400 mb-1.5">
+                      PRIVATE ONE-TO-ONE REAL-TIME MESSAGING
+                    </div>
+                    <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+                      ELON MUSK – DIRECT PRIVATE CHAT
+                    </h2>
+                    <p className="text-xs sm:text-sm text-zinc-400 mt-1.5 max-w-2xl">
+                      Send text, pictures, camera snapshots, and voice messages directly. Your private conversation stays synced across page refreshes.
+                    </p>
                   </div>
-                  <h2 className="text-2xl sm:text-4xl font-extrabold tracking-tight mb-3">
-                    Connect Directly with Platform Administration
-                  </h2>
-                  <p className="text-zinc-300 text-xs sm:text-sm leading-relaxed font-normal">
-                    Real-time encrypted dispatch via Cloud Firestore. Ask questions about Tesla fleet deliveries, commercial SpaceX Starship payload slots, Starlink maritime equipment, or Optimus enterprise orders.
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenChat()}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-zinc-950 hover:bg-zinc-900 border border-cyan-500/40 text-cyan-300 font-bold text-xs rounded-xl transition-colors cursor-pointer shrink-0 self-start sm:self-end"
+                  >
+                    <span>Open Full-Screen View</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
-                <button
-                  onClick={() => handleOpenChat()}
-                  className="flex items-center gap-3 px-8 py-4 bg-white hover:bg-zinc-200 active:bg-zinc-300 text-black font-extrabold text-sm rounded-xl shadow-xl transition-all cursor-pointer transform hover:-translate-y-0.5 shrink-0"
-                >
-                  <MessageSquare className="w-5 h-5 text-black" />
-                  <span>MESSAGE ELON MUSK</span>
-                </button>
+                <DirectPrivateChat
+                  variant="embedded"
+                  onToggleExpand={() => handleOpenChat()}
+                />
               </div>
             </section>
 
@@ -437,7 +414,7 @@ export default function App() {
                     DEEP-DIVE INTELLIGENCE
                   </div>
                   <h2 className="text-2xl sm:text-3xl font-extrabold text-zinc-950">
-                    Latest Technical Publications & Research
+                    Latest Technical Publications &amp; Research
                   </h2>
                 </div>
                 <button
@@ -501,8 +478,6 @@ export default function App() {
             <OwnershipVerificationSection
               record={verificationRecord}
               onOpenPolicy={(type) => setPolicyType(type)}
-              onOpenAdminAuth={() => setAdminAuthOpen(true)}
-              isAdmin={isAdmin}
             />
           </div>
         )}
@@ -515,12 +490,6 @@ export default function App() {
         onOpenChat={handleOpenChat}
         onToggleSave={handleToggleSave}
         isSaved={selectedProduct ? savedItemIds.has(selectedProduct.id) : false}
-      />
-
-      <ChatElonMuskModal
-        isOpen={chatOpen}
-        onClose={() => setChatOpen(false)}
-        isAdmin={isAdmin}
       />
 
       <SearchModal
@@ -549,16 +518,6 @@ export default function App() {
         onOpenChat={handleOpenChat}
       />
 
-      <AdminAuthModal
-        isOpen={adminAuthOpen}
-        onClose={() => setAdminAuthOpen(false)}
-        onSuccess={(email) => {
-          setAdminEmail(email);
-          setIsAdmin(true);
-          setCurrentView('admin');
-        }}
-      />
-
       <LegalPolicyModal
         type={policyType}
         onClose={() => setPolicyType(null)}
@@ -571,22 +530,23 @@ export default function App() {
         onOpenPolicy={(type) => setPolicyType(type)}
       />
 
-      {/* Footer */}
-      <Footer
-        onNavigateSection={(secId) => {
-          if (secId === 'investment') {
-            setCurrentView('investment-hub');
-          } else {
-            setCurrentView(secId);
-          }
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-        onOpenChat={handleOpenChat}
-        onOpenPolicy={(type) => setPolicyType(type)}
-        onOpenAdminAuth={() => setAdminAuthOpen(true)}
-        verificationRecord={verificationRecord}
-        onOpenVerification={() => setVerificationModalOpen(true)}
-      />
+      {/* Footer (Zero Admin Links) */}
+      {currentView !== 'chat' && currentView !== 'recipient-inbox' && (
+        <Footer
+          onNavigateSection={(secId) => {
+            if (secId === 'investment') {
+              setCurrentView('investment-hub');
+            } else {
+              setCurrentView(secId);
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          onOpenChat={handleOpenChat}
+          onOpenPolicy={(type) => setPolicyType(type)}
+          verificationRecord={verificationRecord}
+          onOpenVerification={() => setVerificationModalOpen(true)}
+        />
+      )}
     </div>
   );
 }

@@ -34,7 +34,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   };
 
   const handleInitiateChat = () => {
-    onOpenChat();
+    onOpenChat(
+      `Inquiry regarding ${product.title} ($${Number(product.price || 0).toLocaleString()}): allocation and availability.`
+    );
     onClose();
   };
 
@@ -185,17 +187,17 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               )}
             </div>
 
-            {/* Prominent CHAT ELON MUSK Inquiry Button */}
+            {/* Prominent Direct Private Chat Inquiry Button */}
             <div className="space-y-3 pt-4 border-t border-zinc-100">
               <button
                 onClick={handleInitiateChat}
-                className="w-full py-3.5 px-5 bg-black hover:bg-zinc-800 active:bg-zinc-900 text-white font-extrabold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2.5 cursor-pointer transform hover:-translate-y-0.5"
+                className="w-full py-3.5 px-5 bg-gradient-to-r from-cyan-400 to-blue-600 hover:from-cyan-300 hover:to-blue-500 text-black font-extrabold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2.5 cursor-pointer"
               >
-                <MessageSquare className="w-5 h-5 text-white" />
-                <span>MESSAGE ELON MUSK</span>
+                <MessageSquare className="w-5 h-5 text-black" />
+                <span>DIRECT PRIVATE CHAT</span>
               </button>
               <p className="text-[11px] text-center text-zinc-500">
-                Direct private conversation with Elon Musk.
+                Start a real-time private conversation with our communication team.
               </p>
             </div>
           </div>

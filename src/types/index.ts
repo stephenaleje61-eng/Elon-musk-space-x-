@@ -72,7 +72,7 @@ export interface Conversation {
   visitorName: string;
   visitorLocation?: string;
   initialMessage?: string;
-  status: 'pending' | 'accepted' | 'declined';
+  status: 'active' | 'pending' | 'accepted' | 'declined';
   submittedAt: string;
   acceptedAt?: string;
   declinedAt?: string;
@@ -90,12 +90,15 @@ export interface Conversation {
 export interface Message {
   id: string;
   conversationId: string;
-  from: 'visitor' | 'admin';
+  from: 'visitor' | 'recipient' | 'admin';
   senderId: string;
   senderName: string;
   text: string;
+  messageType?: 'text' | 'image' | 'voice';
   imageUrl?: string;
   imageCaption?: string;
+  audioUrl?: string;
+  audioDuration?: number;
   time: string;
   real: true;
   createdAt: string;
@@ -109,7 +112,7 @@ export interface UserProfile {
   displayName?: string;
   photoURL?: string;
   isAnonymous: boolean;
-  role: 'user' | 'admin';
+  role: 'user' | 'recipient';
   createdAt: string;
   updatedAt?: string;
 }
@@ -146,17 +149,6 @@ export interface ReportItem {
   createdAt: string;
 }
 
-export interface AdminAuditLog {
-  id: string;
-  adminId: string;
-  adminEmail: string;
-  action: string;
-  targetType: string;
-  targetId: string;
-  details?: Record<string, unknown>;
-  timestamp: string;
-}
-
 export type VerificationStatus = 'unverified' | 'pending_audit' | 'verified' | 'rejected';
 
 export interface VerificationRecord {
@@ -179,4 +171,3 @@ export interface VerificationRecord {
   updatedAt: string;
   updatedBy: string;
 }
-

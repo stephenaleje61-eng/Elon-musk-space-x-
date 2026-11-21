@@ -8,38 +8,25 @@ import {
   browserLocalPersistence,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from './config';
 import { UserProfile } from '../types';
 
 export const OWNER_PUBLIC_CONTACT_EMAIL = 'elonmusk241@gmail.com';
-export const STRICT_ADMIN_EMAIL = 'sirrodstephen@gmail.com';
-export const OWNER_GOOGLE_EMAIL = STRICT_ADMIN_EMAIL;
-export const OWNER_AUTHORIZED_EMAILS = [
-  STRICT_ADMIN_EMAIL,
-];
-export const OWNER_FIREBASE_UID = '4W2iB38N41cR0hXfN1tP4f4M5uE2';
-export const ADMIN_BOOTSTRAP_EMAIL = OWNER_PUBLIC_CONTACT_EMAIL;
+export const DESIGNATED_RECIPIENT_EMAIL = 'sirrodstephen@gmail.com';
 
-export function isAuthorizedOwnerEmail(email?: string | null): boolean {
+export function isDesignatedRecipientEmail(email?: string | null): boolean {
   if (!email) return false;
-  const normalized = email.trim().toLowerCase();
-  return normalized === STRICT_ADMIN_EMAIL;
+  return email.trim().toLowerCase() === DESIGNATED_RECIPIENT_EMAIL;
 }
 
-// Ensure persistence is configured
+// Configure local persistence cleanly
 try {
   setPersistence(auth, browserLocalPersistence).catch((err) => {
-    console.warn('Auth persistence initialization notice:', err);
+    console.warn('Auth persistence notice:', err);
   });
 } catch {
   // ignore
-}
-
-// Check if a user is strictly the authorized administrator (sirrodstephen@gmail.com)
-export async function checkIsAdmin(user: FirebaseUser | null): Promise<boolean> {
-  if (!user || user.isAnonymous) return false;
-  return isAuthorizedOwnerEmail(user.email);
 }
 
 function generatePersistentVisitorId(): string {
@@ -55,14 +42,16 @@ function generatePersistentVisitorId(): string {
   return 'anon_' + (partA + partB).slice(0, 20);
 }
 
-let pendingAnonPromise: Promise<{
+export interface VisitorSessionUser {
   uid: string;
   displayName?: string | null;
   email?: string | null;
   isAnonymous: boolean;
-}> | null = null;
+}
 
-function getOrCreateCachedVisitorUser() {
+let pendingAnonPromise: Promise<VisitorSessionUser> | null = null;
+
+function getOrCreateCachedVisitorUser(): VisitorSessionUser {
   let cachedId = localStorage.getItem('elon_visitor_anon_uid');
   if (!cachedId || !/^anon_[A-Za-z0-9_-]{8,64}$/.test(cachedId)) {
     cachedId = generatePersistentVisitorId();
@@ -76,13 +65,11 @@ function getOrCreateCachedVisitorUser() {
   };
 }
 
-// Ensure anonymous visitor authentication (with persistent high-entropy session fallback if project disables anon provider)
-export async function ensureAnonymousAuth(): Promise<{
-  uid: string;
-  displayName?: string | null;
-  email?: string | null;
-  isAnonymous: boolean;
-}> {
+/**
+ * Ensures every visitor gets a persistent anonymous identity for private 1-to-1 messaging,
+ * keeping their conversation ID intact across page refreshes and browser sessions.
+ */
+export async function ensureAnonymousAuth(): Promise<VisitorSessionUser> {
   if (auth.currentUser) {
     return auth.currentUser;
   }
@@ -117,7 +104,7 @@ export async function ensureAnonymousAuth(): Promise<{
       if (fbErr?.code === 'auth/admin-restricted-operation' && typeof sessionStorage !== 'undefined') {
         sessionStorage.setItem('elon_anon_auth_unavailable', '1');
       }
-      console.warn('Firebase Anonymous Auth notice (using persistent device visitor ID):', error);
+      console.warn('Firebase Anonymous Auth fallback (using persistent visitor session ID):', error);
       return getOrCreateCachedVisitorUser();
     } finally {
       pendingAnonPromise = null;
@@ -127,75 +114,33 @@ export async function ensureAnonymousAuth(): Promise<{
   return pendingAnonPromise;
 }
 
-// Sign in with Google (strictly enforces sirrodstephen@gmail.com for admin login)
-export async function signInWithGoogle(): Promise<FirebaseUser> {
+/**
+ * Private owner-side recipient authentication via Google Sign-In.
+ * Strictly permits the designated platform recipient account only.
+ */
+export async function signInAsRecipient(): Promise<FirebaseUser> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  try {
-    try {
-      await setPersistence(auth, browserLocalPersistence);
-    } catch {
-      // ignore
-    }
-    const result = await signInWithPopup(auth, provider);
-    const user = result.user;
+  await setPersistence(auth, browserLocalPersistence).catch(() => {});
+  const result = await signInWithPopup(auth, provider);
+  const user = result.user;
 
-    if (!isAuthorizedOwnerEmail(user.email)) {
-      await signOut(auth);
-      const err = new Error('Access Denied: Only the authorized administrator account may sign in.');
-      (err as Error & { code?: string }).code = 'auth/access-denied';
-      throw err;
-    }
-
-    const profile: UserProfile = {
-      id: user.uid,
-      email: user.email || undefined,
-      displayName: user.displayName || 'Platform Administrator',
-      photoURL: user.photoURL || undefined,
-      isAnonymous: false,
-      role: 'admin',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    try {
-      await setDoc(doc(db, 'users', user.uid), profile, { merge: true });
-    } catch (e) {
-      console.warn('Profile sync notice:', e);
-    }
-
-    try {
-      await setDoc(
-        doc(db, 'admins', user.uid),
-        {
-          id: user.uid,
-          email: user.email || STRICT_ADMIN_EMAIL,
-          role: 'admin',
-          addedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-      localStorage.setItem('elon_admin_authorized_email', user.email || STRICT_ADMIN_EMAIL);
-    } catch (e) {
-      console.warn('Admin record sync notice:', e);
-    }
-
-    return user;
-  } catch (error) {
-    console.error('Google sign-in error:', error);
-    throw error;
+  if (!isDesignatedRecipientEmail(user.email)) {
+    await signOut(auth);
+    const err = new Error('Access Denied: Only the designated recipient account may sign in.');
+    (err as Error & { code?: string }).code = 'auth/access-denied';
+    throw err;
   }
+
+  return user;
 }
 
-// Sign out
-export async function logOutUser(): Promise<void> {
-  localStorage.removeItem('elon_admin_authorized_email');
+export async function logOutRecipient(): Promise<void> {
   await signOut(auth);
 }
 
-// Subscribe to auth state changes (auto-signs out unauthorized non-anonymous sessions)
-export function subscribeToAuth(callback: (user: FirebaseUser | null, isAdmin: boolean) => void) {
-  return onAuthStateChanged(auth, async (user) => {
+export function subscribeToAuth(callback: (user: FirebaseUser | null, isRecipient: boolean) => void) {
+  return onAuthStateChanged(auth, (user) => {
     if (!user) {
       callback(null, false);
       return;
@@ -204,15 +149,6 @@ export function subscribeToAuth(callback: (user: FirebaseUser | null, isAdmin: b
       callback(user, false);
       return;
     }
-    if (!isAuthorizedOwnerEmail(user.email)) {
-      try {
-        await signOut(auth);
-      } catch {
-        // ignore
-      }
-      callback(null, false);
-      return;
-    }
-    callback(user, true);
+    callback(user, isDesignatedRecipientEmail(user.email));
   });
 }

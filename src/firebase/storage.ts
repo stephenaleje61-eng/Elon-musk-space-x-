@@ -1,97 +1,33 @@
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { storage } from './config';
-
 export interface UploadProgressCallback {
   (progress: number, status: string): void;
 }
 
-/**
- * Upload an image file to Firebase Storage with progress tracking.
- * Falls back safely to high-fidelity Base64 data URL if storage bucket rejects or is offline,
- * guaranteeing no publish operation is ever blocked.
- */
-export async function uploadImage(
-  file: File,
-  path: string,
-  onProgress?: UploadProgressCallback
-): Promise<string> {
-  const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const uniquePath = `${path}/${Date.now()}_${sanitizedName}`;
+const MAX_FIRESTORE_MEDIA_LEN = 650 * 1024;
 
-  try {
-    const storageRef = ref(storage, uniquePath);
-    const uploadTask = uploadBytesResumable(storageRef, file, {
-      contentType: file.type || 'image/jpeg',
-    });
-
-    return await new Promise<string>((resolve, reject) => {
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          const progress = Math.round(
-            (snapshot.bytesTransferred / snapshot.totalBytes) * 100
-          );
-          if (onProgress) {
-            onProgress(progress, 'Uploading to Firebase Storage...');
-          }
-        },
-        async (error) => {
-          console.warn('Firebase Storage upload failed or not provisioned, falling back to local persistent data URL:', error);
-          if (onProgress) {
-            onProgress(75, 'Processing optimized media payload...');
-          }
-          try {
-            const dataUrl = await fileToDataUrl(file);
-            if (onProgress) onProgress(100, 'Complete');
-            resolve(dataUrl);
-          } catch (e) {
-            reject(e);
-          }
-        },
-        async () => {
-          try {
-            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-            if (onProgress) onProgress(100, 'Uploaded successfully');
-            resolve(downloadUrl);
-          } catch (error) {
-            console.warn('Could not retrieve download URL, using fallback:', error);
-            const dataUrl = await fileToDataUrl(file);
-            resolve(dataUrl);
-          }
-        }
-      );
-    });
-  } catch (error) {
-    console.warn('Storage initialization error, using client-side data URL fallback:', error);
-    return fileToDataUrl(file);
-  }
-}
-
-/**
- * Convert file to optimized data URL
- */
-export function fileToDataUrl(file: File): Promise<string> {
+export function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = (err) => reject(err);
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
   });
 }
 
+export const fileToDataUrl = (file: File): Promise<string> => blobToDataUrl(file);
+
 /**
  * Fast client-side image compression utility.
- * Resizes large photos to optimal dimensions and compresses to JPEG data URL,
- * keeping document sizes under Firestore 1MB limits while maintaining high clarity.
+ * Resizes large photos and compresses to JPEG safely under Firestore 1 MiB limits
+ * while preserving high visual clarity and zero CORS/network failures.
  */
 export function compressImageFile(
   file: File,
-  maxDimension = 1200,
+  maxDimension = 1080,
   quality = 0.82
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
-      return reject(new Error('Selected file is not an image'));
+      return reject(new Error('Selected file is not an image.'));
     }
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -119,7 +55,6 @@ export function compressImageFile(
         }
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Firestore documents have a strict 1 MiB limit. Target <= 420 KB encoded payload.
         const MAX_DATA_URL_LEN = 420 * 1024;
         let dataUrl = canvas.toDataURL('image/jpeg', quality);
         let q = quality;
@@ -128,7 +63,6 @@ export function compressImageFile(
           dataUrl = canvas.toDataURL('image/jpeg', Math.max(0.35, q));
         }
 
-        // If still over budget, downscale dimensions
         if (dataUrl.length > MAX_DATA_URL_LEN) {
           const scale = 0.65;
           canvas.width = Math.max(320, Math.round(width * scale));
@@ -142,7 +76,7 @@ export function compressImageFile(
 
         resolve(dataUrl);
       };
-      img.onerror = () => reject(new Error('Failed to load image for compression'));
+      img.onerror = () => reject(new Error('Failed to load image for compression.'));
       img.src = src;
     };
     reader.onerror = (err) => reject(err);
@@ -150,3 +84,38 @@ export function compressImageFile(
   });
 }
 
+/**
+ * Optimizes a picture attachment into a persistent compressed JPEG payload
+ * ready for immediate Firestore delivery without Storage CORS delays.
+ */
+export async function uploadImage(
+  file: File,
+  _path: string,
+  onProgress?: UploadProgressCallback
+): Promise<string> {
+  if (onProgress) onProgress(40, 'Optimizing picture...');
+  const compressed = await compressImageFile(file, 1080, 0.82);
+  if (compressed.length > MAX_FIRESTORE_MEDIA_LEN) {
+    throw new Error('Image exceeds maximum supported size even after compression.');
+  }
+  if (onProgress) onProgress(100, 'Ready');
+  return compressed;
+}
+
+/**
+ * Converts a recorded voice message blob into a persistent audio payload
+ * validated under Firestore limits for immediate delivery.
+ */
+export async function uploadAudioBlob(
+  blob: Blob,
+  _path: string,
+  onProgress?: UploadProgressCallback
+): Promise<string> {
+  if (onProgress) onProgress(50, 'Encoding voice note...');
+  const dataUrl = await blobToDataUrl(blob);
+  if (dataUrl.length > MAX_FIRESTORE_MEDIA_LEN) {
+    throw new Error('Voice message is too long. Please keep recordings under 40 seconds.');
+  }
+  if (onProgress) onProgress(100, 'Ready');
+  return dataUrl;
+}
